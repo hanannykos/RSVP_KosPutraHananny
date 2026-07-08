@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Manajemen Kos Hananny",
+  "description": "Sistem manajemen kos terpadu untuk 6 lokasi rumah kos dengan verifikasi dokumen KTP otomatis bertenaga AI, pengingat WhatsApp, dan pelacakan pembayaran real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

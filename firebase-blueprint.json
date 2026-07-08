@@ -1,0 +1,189 @@
+{
+  "entities": {
+    "kos": {
+      "title": "Kos",
+      "description": "Rumah kos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "basePrice": { "type": "number" },
+        "totalRooms": { "type": "number" },
+        "image": { "type": "string" }
+      },
+      "required": ["id", "name", "address", "basePrice", "totalRooms"]
+    },
+    "rooms": {
+      "title": "Room",
+      "description": "Kamar kos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "price": { "type": "number" },
+        "passcode": { "type": "string" },
+        "currentTenantId": { "type": "string" }
+      },
+      "required": ["id", "kosId", "roomNumber", "status", "price"]
+    },
+    "tenants": {
+      "title": "Tenant",
+      "description": "Penyewa kos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "ktpNik": { "type": "string" },
+        "ktpAlamat": { "type": "string" },
+        "ktpTtl": { "type": "string" },
+        "jenisKelamin": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "checkInDate": { "type": "string" },
+        "isCheckedOut": { "type": "boolean" },
+        "passcode": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "kosId", "roomId"]
+    },
+    "reservations": {
+      "title": "Reservation",
+      "description": "Booking reservation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "jenisKelamin": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "checkInDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "ktpVerified": { "type": "boolean" }
+      },
+      "required": ["id", "name", "phone", "kosId", "roomId"]
+    },
+    "payments": {
+      "title": "Payment",
+      "description": "Sewa payment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "tenantName": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "month": { "type": "string" },
+        "year": { "type": "number" },
+        "status": { "type": "string" },
+        "paidAt": { "type": "string" },
+        "invoiceNumber": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "amount", "month", "year", "status"]
+    },
+    "complaints": {
+      "title": "Complaint",
+      "description": "Keluhan penyewa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "tenantName": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "issue": { "type": "string" },
+        "details": { "type": "string" },
+        "severity": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "issue", "status", "createdAt"]
+    },
+    "doorLockLogs": {
+      "title": "DoorLockLog",
+      "description": "Log akses pintu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantName": { "type": "string" },
+        "kosName": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "action": { "type": "string" },
+        "method": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action"]
+    },
+    "financials": {
+      "title": "FinancialTransaction",
+      "description": "Transaksi keuangan kos (pemasukan & pengeluaran)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "kosId": { "type": "string" },
+        "kosName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "date", "category", "description"]
+    }
+  },
+  "firestore": {
+    "kos": {
+      "schema": "kos",
+      "description": "Daftar Kos"
+    },
+    "rooms": {
+      "schema": "rooms",
+      "description": "Kamar Kos"
+    },
+    "tenants": {
+      "schema": "tenants",
+      "description": "Penyewa Kos"
+    },
+    "reservations": {
+      "schema": "reservations",
+      "description": "Reservasi Booking"
+    },
+    "payments": {
+      "schema": "payments",
+      "description": "Pembayaran sewa"
+    },
+    "complaints": {
+      "schema": "complaints",
+      "description": "Komplain Penyewa"
+    },
+    "doorLockLogs": {
+      "schema": "doorLockLogs",
+      "description": "Log Kunci Pintu"
+    },
+    "settings": {
+      "schema": { "$ref": "object" },
+      "description": "Pengaturan"
+    },
+    "financials": {
+      "schema": "financials",
+      "description": "Laporan Keuangan (Pemasukan & Pengeluaran)"
+    }
+  }
+}
