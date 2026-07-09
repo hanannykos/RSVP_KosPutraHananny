@@ -27,7 +27,7 @@ import {
 import { jsPDF } from 'jspdf';
 import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { Kos, Room, Tenant } from '../types';
+import { Kos, Room, Tenant, Payment } from '../types';
 
 interface TenantSignaturePadProps {
   tenantId: string;
@@ -156,6 +156,7 @@ interface TenantsTabProps {
   kosList: Kos[];
   rooms: Room[];
   tenants: Tenant[];
+  payments: Payment[];
   onAddTenant: (tenantData: Omit<Tenant, 'id'>) => Promise<void>;
   onRemoveTenant: (tenantId: string) => Promise<void>;
   onCheckoutTenant: (tenantId: string, checkoutData: { checkOutDate: string; checkoutNotes: string; checkoutRefund: number }) => Promise<void>;
@@ -169,6 +170,7 @@ export default function TenantsTab({
   kosList, 
   rooms, 
   tenants, 
+  payments,
   onAddTenant, 
   onRemoveTenant,
   onCheckoutTenant,
@@ -186,6 +188,7 @@ export default function TenantsTab({
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title: string } | null>(null);
   const [showDocPreviewModal, setShowDocPreviewModal] = useState<boolean>(false);
   const [docPreviewData, setDocPreviewData] = useState<Tenant | null>(null);
+  const [selectedPaymentForView, setSelectedPaymentForView] = useState<Payment | null>(null);
 
   // HANDLER: Save signature url to firestore
   const handleSaveTenantSignature = async (tenantId: string, signatureUrl: string) => {
@@ -870,6 +873,21 @@ export default function TenantsTab({
       return;
     }
 
+    // Phone & Email Validation
+    const cleanPhone = regPhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      alert('Nomor HP/WhatsApp minimal harus terdiri dari 10 digit angka!');
+      return;
+    }
+
+    if (regEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(regEmail)) {
+        alert('Format alamat email tidak valid!');
+        return;
+      }
+    }
+
     const selectedKos = kosList.find(k => k.id === regKosId);
     const selectedRoom = rooms.find(r => r.id === regRoomId);
 
@@ -1190,6 +1208,192 @@ export default function TenantsTab({
                                       <FileText className="w-3.5 h-3.5 text-blue-400" />
                                       <span>Save as PDF (Invoice)</span>
                                     </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Payment History & Automatic Next Payment Projection Option */}
+                              <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                                <h5 className="text-[10px] font-extrabold text-slate-800 uppercase tracking-widest flex items-center">
+                                  <Clock className="w-3.5 h-3.5 mr-1.5 text-blue-600 animate-pulse" />
+                                  Riwayat & Proyeksi Pembayaran Sewa
+                                </h5>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {/* Left side: Riwayat Pembayaran */}
+                                  <div className="bg-slate-50/50 border border-slate-200/60 p-3 rounded-lg space-y-2.5">
+                                    <p className="text-[9px] text-slate-400 uppercase font-extrabold tracking-wider">
+                                      Riwayat Pembayaran ({payments.filter(p => p.tenantId === tenant.id).length})
+                                    </p>
+                                    
+                                    {(() => {
+                                      const tenantPayments = payments.filter(p => p.tenantId === tenant.id);
+                                      const sortedTenantPayments = [...tenantPayments].sort((a, b) => {
+                                        const MONTHS_ID = [
+                                          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+                                        ];
+                                        const aMonthIndex = MONTHS_ID.indexOf(a.month);
+                                        const bMonthIndex = MONTHS_ID.indexOf(b.month);
+                                        if (a.year !== b.year) {
+                                          return b.year - a.year; // newer year first
+                                        }
+                                        return bMonthIndex - aMonthIndex; // newer month first
+                                      });
+
+                                      if (sortedTenantPayments.length === 0) {
+                                        return (
+                                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider py-4 text-center">
+                                            Belum ada histori pembayaran.
+                                          </p>
+                                        );
+                                      }
+
+                                      return (
+                                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                          {sortedTenantPayments.map((p) => (
+                                            <div key={p.id} className="bg-white p-2 rounded border border-slate-100 flex items-center justify-between text-[11px] hover:shadow-2xs transition-shadow">
+                                              <div>
+                                                <p className="font-bold text-slate-800">Periode {p.month} {p.year}</p>
+                                                <p className="text-[9px] text-slate-400 font-mono leading-none mt-0.5">{p.invoiceNumber}</p>
+                                                {p.paidAt && (
+                                                  <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-wide mt-1">
+                                                    Lunas: {new Date(p.paidAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center space-x-2">
+                                                <div className="text-right space-y-1">
+                                                  <p className="font-bold text-slate-800 font-mono">{formatIDR(p.amount)}</p>
+                                                  <span className={`inline-block text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded ${
+                                                    p.status === 'paid'
+                                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                      : p.status === 'overdue'
+                                                        ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                        : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                  }`}>
+                                                    {p.status === 'paid' ? 'Lunas' : p.status === 'overdue' ? 'Overdue' : 'Menunggu'}
+                                                  </span>
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedPaymentForView(p)}
+                                                  className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
+                                                  title="Pratinjau Kuitansi Pembayaran"
+                                                >
+                                                  <Eye className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  {/* Right side: Otomatis Pembayaran Selanjutnya */}
+                                  <div className="bg-blue-50/10 border border-blue-100/40 p-3 rounded-lg space-y-2.5 flex flex-col justify-between">
+                                    <div className="space-y-2">
+                                      <p className="text-[9px] text-blue-600 uppercase font-extrabold tracking-wider">
+                                        Proyeksi Pembayaran Selanjutnya
+                                      </p>
+                                      
+                                      {(() => {
+                                        const MONTHS_ID = [
+                                          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+                                        ];
+                                        const tenantPayments = payments.filter(p => p.tenantId === tenant.id);
+                                        const sortedTenantPayments = [...tenantPayments].sort((a, b) => {
+                                          const aMonthIndex = MONTHS_ID.indexOf(a.month);
+                                          const bMonthIndex = MONTHS_ID.indexOf(b.month);
+                                          if (a.year !== b.year) {
+                                            return b.year - a.year;
+                                          }
+                                          return bMonthIndex - aMonthIndex;
+                                        });
+
+                                        let nextMonthStr = '';
+                                        let nextYearNum = 2026;
+                                        let baseRentPrice = 1500000;
+                                        let isBasedOnHistory = false;
+
+                                        // Find room price
+                                        const rInfo = rooms.find(r => r.id === tenant.roomId);
+                                        if (rInfo) {
+                                          baseRentPrice = rInfo.price;
+                                        }
+
+                                        if (sortedTenantPayments.length > 0) {
+                                          const latest = sortedTenantPayments[0];
+                                          const latestMonthIndex = MONTHS_ID.indexOf(latest.month);
+                                          if (latestMonthIndex === 11) {
+                                            nextMonthStr = MONTHS_ID[0];
+                                            nextYearNum = latest.year + 1;
+                                          } else {
+                                            nextMonthStr = MONTHS_ID[latestMonthIndex + 1];
+                                            nextYearNum = latest.year;
+                                          }
+                                          isBasedOnHistory = true;
+                                        } else {
+                                          // Based on check-in date
+                                          const checkIn = new Date(tenant.checkInDate || Date.now());
+                                          const monthIdx = isNaN(checkIn.getTime()) ? new Date().getMonth() : checkIn.getMonth();
+                                          const year = isNaN(checkIn.getTime()) ? new Date().getFullYear() : checkIn.getFullYear();
+                                          nextMonthStr = MONTHS_ID[monthIdx];
+                                          nextYearNum = year;
+                                        }
+
+                                        // Approximate deadline date is usually the same date as check-in but in next month
+                                        let deadlineDateStr = '-';
+                                        if (tenant.checkInDate) {
+                                          const checkInDateObj = new Date(tenant.checkInDate);
+                                          if (!isNaN(checkInDateObj.getTime())) {
+                                            const day = checkInDateObj.getDate().toString().padStart(2, '0');
+                                            const monthIndex = MONTHS_ID.indexOf(nextMonthStr) + 1;
+                                            const monthStr = monthIndex.toString().padStart(2, '0');
+                                            deadlineDateStr = `${nextYearNum}-${monthStr}-${day}`;
+                                          }
+                                        }
+
+                                        return (
+                                          <div className="space-y-2 text-[11px] text-slate-700">
+                                            <div className="bg-white p-2.5 rounded border border-blue-100/60 space-y-1.5 shadow-2xs">
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase">Periode Tagihan:</span>
+                                                <span className="font-extrabold text-blue-700 text-[11px] bg-blue-50 px-2 py-0.5 rounded">{nextMonthStr} {nextYearNum}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase">Estimasi Tenggat:</span>
+                                                <span className="font-bold text-slate-800 font-mono">{deadlineDateStr}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase">Tarif Kamar:</span>
+                                                <span className="font-bold text-slate-800 font-mono">{formatIDR(baseRentPrice)}</span>
+                                              </div>
+                                              <div className="border-t border-slate-100 my-1 pt-1 flex justify-between items-center text-xs">
+                                                <span className="text-[10px] font-extrabold text-slate-500 uppercase">Proyeksi Total:</span>
+                                                <span className="font-black text-blue-600 font-mono text-xs">{formatIDR(baseRentPrice)}</span>
+                                              </div>
+                                            </div>
+
+                                            <p className="text-[9px] text-slate-400 leading-relaxed font-semibold">
+                                              {isBasedOnHistory 
+                                                ? `* Berdasarkan tagihan terakhir (${sortedTenantPayments[0].month} ${sortedTenantPayments[0].year}).`
+                                                : `* Proyeksi otomatis dihitung dari tanggal mulai sewa (${tenant.checkInDate || 'hari ini'}).`
+                                              }
+                                            </p>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                    
+                                    <div className="pt-2 text-right">
+                                      <span className="inline-flex items-center space-x-1 text-[8px] font-bold text-blue-600 uppercase tracking-widest bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200/30">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse mr-1"></span>
+                                        <span>Auto-Projector Aktif</span>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1824,6 +2028,7 @@ export default function TenantsTab({
                     <p className="text-slate-500">Jenis Kelamin: <span className="text-slate-800 font-bold">{selectedPreviewTenant.jenisKelamin}</span></p>
                     <p className="text-slate-500">Pekerjaan: <span className="text-slate-800 font-bold">{selectedPreviewTenant.pekerjaan === 'Lainnya' ? selectedPreviewTenant.pekerjaanDetail : selectedPreviewTenant.pekerjaan || 'Belum Terdata'}</span></p>
                     <p className="text-slate-500">Status Nikah: <span className="text-slate-800 font-bold">{selectedPreviewTenant.statusPerkawinan === 'Lainnya' ? selectedPreviewTenant.statusPerkawinanDetail : selectedPreviewTenant.statusPerkawinan || 'Belum Terdata'}</span></p>
+                    <p className="text-slate-500">Alamat: <span className="text-slate-800 font-bold">{selectedPreviewTenant.ktpAlamat || 'Belum Terdata'}</span></p>
                     {selectedPreviewTenant.guarantorName && (
                       <>
                         <p className="text-slate-500">Wali: <span className="text-slate-800 font-bold">{selectedPreviewTenant.guarantorName}</span></p>
@@ -1974,6 +2179,25 @@ export default function TenantsTab({
                 e.preventDefault();
                 try {
                   const { id, ...updateData } = selectedEditTenant;
+
+                  // Phone validation
+                  if (updateData.phone) {
+                    const cleanPhone = updateData.phone.replace(/\D/g, '');
+                    if (cleanPhone.length < 10) {
+                      alert('Nomor HP/WhatsApp minimal harus terdiri dari 10 digit angka!');
+                      return;
+                    }
+                  }
+
+                  // Email validation
+                  if (updateData.email) {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(updateData.email)) {
+                      alert('Format alamat email tidak valid!');
+                      return;
+                    }
+                  }
+
                   await onUpdateTenant(id, updateData);
                   alert('Data Penghuni berhasil disimpan!');
                   setSelectedEditTenant(null);
@@ -2419,6 +2643,103 @@ export default function TenantsTab({
                   <Download className="w-4 h-4" />
                   <span>Unduh Draft PDF</span>
                 </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* VIEW PAYMENT MODAL (FROM RIWAYAT PEMBAYARAN) */}
+      {selectedPaymentForView && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-[70] p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white w-full max-w-md rounded-lg border border-slate-200 shadow-xl overflow-hidden text-slate-800 text-left font-sans font-semibold"
+          >
+            <div className="bg-slate-900 text-white p-4 flex justify-between items-center border-b border-slate-800">
+              <div>
+                <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider flex items-center">
+                  <Eye className="w-3.5 h-3.5 mr-1" /> Rincian Tagihan Bulanan
+                </span>
+                <h4 className="text-sm font-bold">{selectedPaymentForView.invoiceNumber}</h4>
+              </div>
+              <button onClick={() => setSelectedPaymentForView(null)} className="text-slate-400 hover:text-white text-xs font-bold uppercase tracking-wider cursor-pointer">
+                Tutup
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Penyewa</p>
+                  <p className="font-bold text-slate-800 text-sm">{selectedPaymentForView.tenantName}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Unit Kamar</p>
+                  <p className="font-bold text-slate-800 text-sm">{selectedPaymentForView.kosName} — {selectedPaymentForView.roomNumber}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Bulan & Tahun</p>
+                  <p className="font-bold text-slate-800">{selectedPaymentForView.month} {selectedPaymentForView.year}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Jumlah Tagihan</p>
+                  <p className="font-bold text-blue-600 font-mono text-sm">{formatIDR(selectedPaymentForView.amount)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Opsi Pembayaran</p>
+                  <p className="font-bold text-slate-800">{selectedPaymentForView.paymentOption || 'Bulanan'}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Batas Tenggat</p>
+                  <p className="font-bold text-amber-600">{selectedPaymentForView.deadlineDate || '-'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-400 uppercase text-[9px]">Status</p>
+                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    selectedPaymentForView.status === 'paid' 
+                      ? 'bg-emerald-100 text-emerald-800' 
+                      : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {selectedPaymentForView.status === 'paid' ? 'LUNAS' : 'BELUM BAYAR'}
+                  </span>
+                </div>
+                {selectedPaymentForView.paidAt && (
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-slate-400 uppercase text-[9px]">Tanggal Bayar</p>
+                    <p className="font-bold text-slate-800 font-mono">{new Date(selectedPaymentForView.paidAt).toLocaleDateString('id-ID')} {new Date(selectedPaymentForView.paidAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Display Proof of Transfer if any */}
+              <div className="space-y-2">
+                <p className="font-bold text-slate-500 uppercase text-[9px] tracking-wider">Dokumentasi Bukti Transfer:</p>
+                {selectedPaymentForView.proofOfTransferUrl ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded p-2 text-center space-y-1.5">
+                    <img
+                      src={selectedPaymentForView.proofOfTransferUrl}
+                      alt="Bukti Transfer"
+                      className="max-h-48 mx-auto rounded border border-slate-300 object-contain shadow-xs"
+                      referrerPolicy="no-referrer"
+                    />
+                    {selectedPaymentForView.proofOfTransferUploadedAt && (
+                      <p className="text-[10px] text-slate-400 font-mono">Diunggah pada: {new Date(selectedPaymentForView.proofOfTransferUploadedAt).toLocaleString('id-ID')}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic font-medium">Bukti transfer belum diunggah.</p>
+                )}
               </div>
             </div>
           </motion.div>

@@ -22,13 +22,15 @@ interface RoomsTabProps {
   rooms: Room[];
   tenants: Tenant[];
   onUpdateRoom: (roomId: string, updates: Partial<Room>) => Promise<void>;
+  onUpdateTenant: (tenantId: string, updates: Partial<Tenant>) => Promise<void>;
 }
 
 export default function RoomsTab({ 
   kosList, 
   rooms, 
   tenants, 
-  onUpdateRoom 
+  onUpdateRoom,
+  onUpdateTenant
 }: RoomsTabProps) {
   const [selectedKosId, setSelectedKosId] = useState<string>(kosList[0]?.id || '');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -41,6 +43,7 @@ export default function RoomsTab({
   const [payYearly, setPayYearly] = useState<boolean>(true);
   const [passcodeVisible, setPasscodeVisible] = useState<boolean>(false);
   const [updating, setUpdating] = useState<boolean>(false);
+  const [targetRoomId, setTargetRoomId] = useState<string>('');
 
   // Selected Kos details
   const selectedKos = useMemo(() => {
@@ -65,6 +68,7 @@ export default function RoomsTab({
     setPayThreeMonths(room.payThreeMonths !== false);
     setPaySixMonths(room.paySixMonths !== false);
     setPayYearly(room.payYearly !== false);
+    setTargetRoomId('');
   };
 
   const handleSaveRoom = async () => {
@@ -83,6 +87,60 @@ export default function RoomsTab({
       setEditingRoom(null);
     } catch (e) {
       console.error(e);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleMoveRoom = async () => {
+    if (!editingRoom || !targetRoomId) return;
+    const activeTenant = tenants.find(t => t.id === editingRoom.currentTenantId);
+    if (!activeTenant) {
+      alert('Kamar asal harus memiliki penyewa aktif!');
+      return;
+    }
+
+    const targetRoom = rooms.find(r => r.id === targetRoomId);
+    if (!targetRoom) {
+      alert('Kamar tujuan tidak ditemukan!');
+      return;
+    }
+
+    if (targetRoom.status !== 'available') {
+      alert('Kamar tujuan harus dalam status kosong (available)!');
+      return;
+    }
+
+    if (!window.confirm(`Apakah Anda yakin ingin memindahkan ${activeTenant.name} dari Kamar ${editingRoom.roomNumber} ke Kamar ${targetRoom.roomNumber}?`)) {
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      // 1. Update Tenant doc
+      await onUpdateTenant(activeTenant.id, {
+        roomId: targetRoom.id,
+        roomNumber: targetRoom.roomNumber,
+        passcode: targetRoom.passcode || ''
+      });
+
+      // 2. Update Old Room (set as available and clear currentTenantId)
+      await onUpdateRoom(editingRoom.id, {
+        status: 'available',
+        currentTenantId: null
+      });
+
+      // 3. Update New Room (set as occupied and assign currentTenantId)
+      await onUpdateRoom(targetRoom.id, {
+        status: 'occupied',
+        currentTenantId: activeTenant.id
+      });
+
+      alert(`Berhasil memindahkan ${activeTenant.name} ke Kamar ${targetRoom.roomNumber}! Data penyewa telah disinkronkan secara otomatis.`);
+      setEditingRoom(null);
+    } catch (err) {
+      console.error('Failed to move room:', err);
+      alert('Gagal memindahkan kamar: ' + err);
     } finally {
       setUpdating(false);
     }
@@ -313,23 +371,63 @@ export default function RoomsTab({
                 </button>
               </div>
 
-              {/* Modal Body */}
+               {/* Modal Body */}
               <div className="p-4 space-y-4">
                 {activeTenant && (
-                  <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-lg space-y-2">
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Penghuni Aktif Unit Ini</p>
-                    <div className="flex items-center space-x-2.5">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs uppercase">
-                        {activeTenant.name.substring(0, 2)}
+                  <div className="space-y-3">
+                    <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-lg space-y-2">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Penghuni Aktif Unit Ini</p>
+                      <div className="flex items-center space-x-2.5">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs uppercase">
+                          {activeTenant.name.substring(0, 2)}
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-slate-800">{activeTenant.name}</p>
+                          <p className="text-[10px] text-slate-500 font-medium font-mono leading-none">
+                            WA: {activeTenant.phone} | NIK: {activeTenant.ktpNik}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-medium font-mono leading-none">
+                            Masuk: {activeTenant.checkInDate}
+                          </p>
+                        </div>
                       </div>
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-bold text-slate-800">{activeTenant.name}</p>
-                        <p className="text-[10px] text-slate-500 font-medium font-mono leading-none">
-                          WA: {activeTenant.phone} | NIK: {activeTenant.ktpNik}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-medium font-mono leading-none">
-                          Masuk: {activeTenant.checkInDate}
-                        </p>
+                    </div>
+
+                    {/* Pindah Kamar Section */}
+                    <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-lg space-y-2">
+                      <p className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider">Pindah Kamar (Room Transfer)</p>
+                      <p className="text-[10px] text-slate-500 font-medium leading-normal">
+                        Pindahkan penyewa ini ke kamar lain yang kosong secara otomatis. Semua data penyewa akan disinkronkan.
+                      </p>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pilih Kamar Kosong</label>
+                        <div className="flex gap-2">
+                          <select
+                            value={targetRoomId}
+                            onChange={(e) => setTargetRoomId(e.target.value)}
+                            className="flex-1 text-[11px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-2.5 py-1.5 cursor-pointer focus:outline-indigo-500"
+                          >
+                            <option value="">-- Pilih Kamar Kosong --</option>
+                            {rooms
+                              .filter(r => r.status === 'available' && r.id !== editingRoom.id && r.kosId === editingRoom.kosId)
+                              .map(r => (
+                                <option key={r.id} value={r.id}>
+                                  Kamar {r.roomNumber} - {formatIDR(r.price)} / bln
+                                </option>
+                              ))
+                            }
+                          </select>
+                          
+                          <button
+                            type="button"
+                            onClick={handleMoveRoom}
+                            disabled={!targetRoomId || updating}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black text-[10px] uppercase tracking-wider rounded transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            Pindahkan
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

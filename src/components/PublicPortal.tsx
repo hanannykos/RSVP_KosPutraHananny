@@ -223,6 +223,21 @@ export default function PublicPortal({
     );
   }, [rooms, bookKosId, bookRoomManualText]);
 
+  // Find selected Kos branch details for booking payment info
+  const bookingKos = useMemo(() => {
+    return kosList.find(k => k.id === bookKosId);
+  }, [kosList, bookKosId]);
+
+  const bankAccountDisplay = useMemo(() => {
+    if (bookingKos && bookingKos.bankAccount) {
+      if (bookingKos.bankRecipient) {
+        return `${bookingKos.bankAccount} a.n ${bookingKos.bankRecipient}`;
+      }
+      return bookingKos.bankAccount;
+    }
+    return "MANDIRI 123-456-789-0 a.n Hananny Kos";
+  }, [bookingKos]);
+
   // Format price to IDR
   const formatIDR = (val: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -1018,7 +1033,7 @@ export default function PublicPortal({
             </div>
 
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-              Transfer pembayaran DP / Sewa lunas ke rekening resmi: <span className="font-bold text-slate-700">MANDIRI 123-456-789-0 a.n Hananny Kos</span>, kemudian lampirkan foto/screenshot buktinya di bawah.
+              Transfer pembayaran DP / Sewa lunas ke rekening resmi: <span className="font-bold text-slate-700">{bankAccountDisplay}</span>, kemudian lampirkan foto/screenshot buktinya di bawah.
             </p>
 
             <div className="bg-slate-50/50 border border-dashed border-slate-300 p-6 rounded-lg flex flex-col items-center justify-center text-center space-y-3">

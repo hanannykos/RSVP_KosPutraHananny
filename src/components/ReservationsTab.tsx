@@ -542,6 +542,22 @@ export default function ReservationsTab({
       return;
     }
 
+    // Phone validation (min 10 digits)
+    const cleanPhone = bookPhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      alert('Nomor HP/WhatsApp minimal harus terdiri dari 10 digit angka!');
+      return;
+    }
+
+    // Email validation (if filled)
+    if (bookEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(bookEmail)) {
+        alert('Format alamat email tidak valid!');
+        return;
+      }
+    }
+
     if (bookKosId === 'Lainnya' && !bookKosManualText.trim()) {
       alert('Mohon tuliskan Lokasi Cabang Kos secara manual.');
       return;

@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 // Load environment variables
 dotenv.config();
@@ -53,18 +53,8 @@ app.post('/api/verify-ktp', async (req, res) => {
     const ai = getGeminiClient();
     
     const prompt = `Extract details from this Indonesian National ID Card (KTP). 
-Return a valid JSON object matching this schema exactly:
-{
-  "nik": "string NIK (16 digits)",
-  "nama": "string (Full Name in CAPITALS)",
-  "alamat": "string (Complete Address)",
-  "ttl": "string (Place, Date of Birth)",
-  "jenisKelamin": "string ('LAKI-LAKI' or 'PEREMPUAN')",
-  "isAuthentic": true/false (evaluate if this is a real KTP card/mock KTP or random photo),
-  "confidenceScore": number (0.0 to 1.0 indicating clarity),
-  "notes": "string (observations, e.g. image blurry, valid KTP, etc.)"
-}
-Ensure output is ONLY a raw valid JSON object. Do not wrap in markdown or any other text.`;
+Evaluate whether the provided image is actually a valid Indonesian National ID Card (KTP) card, or something else.
+If the image is not a KTP (e.g. if it is a cat, dog, random object, landscape, text document, or not an Indonesian ID card), set isAuthentic to false and explain why in notes.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -76,7 +66,48 @@ Ensure output is ONLY a raw valid JSON object. Do not wrap in markdown or any ot
           }
         },
         prompt
-      ]
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            nik: {
+              type: Type.STRING,
+              description: "16-digit National Identity Card number (NIK). If not found or not a valid KTP, return empty string."
+            },
+            nama: {
+              type: Type.STRING,
+              description: "Full Name in CAPITALS. If not found or not a valid KTP, return empty string."
+            },
+            alamat: {
+              type: Type.STRING,
+              description: "Complete Address. If not found or not a valid KTP, return empty string."
+            },
+            ttl: {
+              type: Type.STRING,
+              description: "Place and Date of Birth (e.g. JAKARTA, 01-01-1990). If not found or not a valid KTP, return empty string."
+            },
+            jenisKelamin: {
+              type: Type.STRING,
+              description: "Gender, strictly 'LAKI-LAKI' or 'PEREMPUAN'. If not found, return empty string."
+            },
+            isAuthentic: {
+              type: Type.BOOLEAN,
+              description: "True if the image is a valid Indonesian KTP card. False if it is a cat, dog, random object, or not an Indonesian KTP."
+            },
+            confidenceScore: {
+              type: Type.NUMBER,
+              description: "Score from 0.0 to 1.0 indicating clarity and confidence."
+            },
+            notes: {
+              type: Type.STRING,
+              description: "Observations or reasons if verification fails (e.g. 'Image is not a KTP (e.g. cat in a cage)', 'Valid KTP detected', 'Blurry')."
+            }
+          },
+          required: ["nik", "nama", "alamat", "ttl", "jenisKelamin", "isAuthentic", "confidenceScore", "notes"]
+        }
+      }
     });
 
     const responseText = response.text || '';
@@ -100,13 +131,13 @@ Ensure output is ONLY a raw valid JSON object. Do not wrap in markdown or any ot
       res.json({
         success: true,
         data: {
-          nik: '3171XXXXXXXXXXXX',
-          nama: 'PENGHUNI MOCK (Gagal parse JSON)',
-          alamat: 'Alamat lengkap KTP',
-          ttl: 'JAKARTA, 01-01-1990',
-          jenisKelamin: 'LAKI-LAKI',
+          nik: '',
+          nama: 'Gagal Membaca KTP',
+          alamat: '',
+          ttl: '',
+          jenisKelamin: '',
           isAuthentic: false,
-          confidenceScore: 0.5,
+          confidenceScore: 0.0,
           notes: 'Gagal parse JSON hasil scan AI: ' + responseText
         }
       });

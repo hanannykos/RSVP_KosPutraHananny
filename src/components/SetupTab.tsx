@@ -70,6 +70,34 @@ export default function SetupTab({
 }: SetupTabProps) {
   // Navigation inside Setup Tab
   const [activeSubTab, setActiveSubTab] = useState<'whatsapp' | 'gateway' | 'rooms' | 'multi-id' | 'system'>('rooms');
+
+  // Custom dialog/modal state
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    type: 'confirm' | 'alert';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  } | null>(null);
+
+  const showCustomConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setDialogConfig({
+      isOpen: true,
+      type: 'confirm',
+      title,
+      message,
+      onConfirm
+    });
+  };
+
+  const showCustomAlert = (title: string, message: string) => {
+    setDialogConfig({
+      isOpen: true,
+      type: 'alert',
+      title,
+      message
+    });
+  };
   
   // WhatsApp Gateway Form States
   const [gwType, setGwType] = useState(whatsappGateway.gatewayType);
@@ -92,32 +120,36 @@ export default function SetupTab({
   const [deletingDummy, setDeletingDummy] = useState(false);
 
   const handleDeleteDummy = async () => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus semua data dummy bawaan sistem? Data baru/pribadi yang Anda buat TIDAK akan hilang.')) {
-      if (!onDeleteDummyData) {
-        alert('Fitur hapus data dummy tidak tersedia.');
-        return;
+    showCustomConfirm(
+      'Hapus Data Dummy',
+      'Apakah Anda yakin ingin menghapus semua data dummy bawaan sistem? Data baru/pribadi yang Anda buat TIDAK akan hilang. Tindakan ini bersifat permanen dan tidak dapat dibatalkan.',
+      async () => {
+        if (!onDeleteDummyData) {
+          showCustomAlert('Fitur Tidak Tersedia', 'Fitur hapus data dummy tidak tersedia.');
+          return;
+        }
+        setDeletingDummy(true);
+        try {
+          await onDeleteDummyData();
+          showCustomAlert('Berhasil', 'Semua data dummy bawaan berhasil dihapus dari database! Sistem sekarang bersih dan hanya menampilkan data baru Anda.');
+        } catch (e) {
+          console.error(e);
+          showCustomAlert('Gagal', 'Gagal menghapus data dummy.');
+        } finally {
+          setDeletingDummy(false);
+        }
       }
-      setDeletingDummy(true);
-      try {
-        await onDeleteDummyData();
-        alert('Semua data dummy bawaan berhasil dihapus dari database! Sistem sekarang bersih dan hanya menampilkan data baru Anda.');
-      } catch (e) {
-        console.error(e);
-        alert('Gagal menghapus data dummy.');
-      } finally {
-        setDeletingDummy(false);
-      }
-    }
+    );
   };
 
   const handleSaveAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminUsername.trim() || !adminLoginCode.trim()) {
-      alert('Username dan Kode Login wajib diisi.');
+      showCustomAlert('Input Tidak Valid', 'Username dan Kode Login wajib diisi.');
       return;
     }
     if (!onSaveAdminLogin) {
-      alert('Fitur simpan Multi ID tidak tersedia.');
+      showCustomAlert('Fitur Tidak Tersedia', 'Fitur simpan Multi ID tidak tersedia.');
       return;
     }
 
@@ -136,10 +168,10 @@ export default function SetupTab({
       setAdminLoginCode('');
       setAdminRole('Staff');
       setEditingAdminId('');
-      alert('Data Multi ID berhasil disimpan!');
+      showCustomAlert('Berhasil', 'Data Multi ID berhasil disimpan!');
     } catch (err) {
       console.error(err);
-      alert('Gagal menyimpan data Multi ID.');
+      showCustomAlert('Gagal', 'Gagal menyimpan data Multi ID.');
     } finally {
       setSavingAdmin(false);
     }
@@ -153,17 +185,21 @@ export default function SetupTab({
   };
 
   const handleDeleteAdmin = async (adminId: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus data login Multi ID ini?')) {
-      if (onDeleteAdminLogin) {
-        try {
-          await onDeleteAdminLogin(adminId);
-          alert('Data Multi ID berhasil dihapus!');
-        } catch (err) {
-          console.error(err);
-          alert('Gagal menghapus data Multi ID.');
+    showCustomConfirm(
+      'Hapus Multi ID',
+      'Apakah Anda yakin ingin menghapus data login Multi ID ini?',
+      async () => {
+        if (onDeleteAdminLogin) {
+          try {
+            await onDeleteAdminLogin(adminId);
+            showCustomAlert('Berhasil', 'Data Multi ID berhasil dihapus!');
+          } catch (err) {
+            console.error(err);
+            showCustomAlert('Gagal', 'Gagal menghapus data Multi ID.');
+          }
         }
       }
-    }
+    );
   };
 
   // Sync gateway states if props change
@@ -194,7 +230,7 @@ export default function SetupTab({
       }
     } catch (err) {
       console.error(err);
-      alert('Gagal menyimpan konfigurasi WhatsApp Gateway.');
+      showCustomAlert('Gagal', 'Gagal menyimpan konfigurasi WhatsApp Gateway.');
     } finally {
       setSavingGateway(false);
     }
@@ -205,7 +241,7 @@ export default function SetupTab({
     setTimeout(() => {
       setGwStatus('connected');
       setTestingConnection(false);
-      alert('Koneksi sukses! API Gateway WhatsApp merespons OK (HTTP 200).');
+      showCustomAlert('Koneksi Sukses', 'Koneksi sukses! API Gateway WhatsApp merespons OK (HTTP 200).');
     }, 1200);
   };
   
@@ -227,10 +263,14 @@ export default function SetupTab({
   const defaultComplaint = `Halo Kak {nama}, laporan keluhan Anda mengenai "{isu}" di {kos} ({kamar}) saat ini telah diperbarui menjadi status: *{status}*.\n\nDetail Keluhan:\n"{details}"\n\nTerima kasih atas kesabarannya ya Kak! Kami akan terus berupaya memberikan kenyamanan hunian yang terbaik. 😊`;
 
   const handleRestoreDefaults = () => {
-    if (confirm('Apakah Anda yakin ingin mengembalikan template ke format standar/default?')) {
-      setPaymentReminder(defaultReminder);
-      setComplaintNotification(defaultComplaint);
-    }
+    showCustomConfirm(
+      'Kembalikan Template',
+      'Apakah Anda yakin ingin mengembalikan template ke format standar/default?',
+      () => {
+        setPaymentReminder(defaultReminder);
+        setComplaintNotification(defaultComplaint);
+      }
+    );
   };
 
   const handleSaveTemplates = async () => {
@@ -245,7 +285,7 @@ export default function SetupTab({
       setTimeout(() => setTemplateSuccess(false), 3000);
     } catch (err) {
       console.error(err);
-      alert('Gagal menyimpan template WhatsApp.');
+      showCustomAlert('Gagal', 'Gagal menyimpan template WhatsApp.');
     } finally {
       setSavingTemplates(false);
     }
@@ -288,11 +328,11 @@ export default function SetupTab({
 
   const handleCreateKos = async () => {
     if (!newKosName.trim() || !newKosAddress.trim()) {
-      alert('Nama dan Alamat Kos wajib diisi.');
+      showCustomAlert('Input Tidak Valid', 'Nama dan Alamat Kos wajib diisi.');
       return;
     }
     if (!onAddKos) {
-      alert('Fitur tambah cabang tidak tersedia.');
+      showCustomAlert('Fitur Tidak Tersedia', 'Fitur tambah cabang tidak tersedia.');
       return;
     }
     setAddingNewKos(true);
@@ -316,10 +356,10 @@ export default function SetupTab({
       setNewKosPicPhone('');
       setNewKosBankAccount('');
       setNewKosBankRecipient('');
-      alert('Cabang Kos Baru Berhasil Ditambahkan!');
+      showCustomAlert('Berhasil', 'Cabang Kos Baru Berhasil Ditambahkan!');
     } catch (err) {
       console.error(err);
-      alert('Gagal menambahkan cabang kos baru.');
+      showCustomAlert('Gagal', 'Gagal menambahkan cabang kos baru.');
     } finally {
       setAddingNewKos(false);
     }
@@ -334,30 +374,34 @@ export default function SetupTab({
     const kosRooms = rooms.filter(r => r.kosId === selectedKosId);
     const hasOccupied = kosRooms.some(r => r.status === 'occupied');
     if (hasOccupied) {
-      alert(`Cabang "${selectedKos.name}" tidak dapat dihapus karena masih memiliki kamar yang dihuni (occupied). Silakan checkout seluruh penghuni di cabang ini terlebih dahulu.`);
+      showCustomAlert('Tidak Dapat Menghapus', `Cabang "${selectedKos.name}" tidak dapat dihapus karena masih memiliki kamar yang dihuni (occupied). Silakan checkout seluruh penghuni di cabang ini terlebih dahulu.`);
       return;
     }
 
-    if (confirm(`Apakah Anda yakin ingin menghapus cabang "${selectedKos.name}" beserta seluruh kamar di dalamnya? Tindakan ini tidak dapat dibatalkan.`)) {
-      if (!onDeleteKos) {
-        alert('Fitur hapus cabang tidak tersedia.');
-        return;
-      }
-      try {
-        await onDeleteKos(selectedKosId);
-        alert('Cabang Kos Berhasil Dihapus!');
-        // Select next available kos or empty
-        const remaining = kosList.filter(k => k.id !== selectedKosId);
-        if (remaining.length > 0) {
-          setSelectedKosId(remaining[0].id);
-        } else {
-          setSelectedKosId('');
+    showCustomConfirm(
+      'Hapus Cabang Kos',
+      `Apakah Anda yakin ingin menghapus cabang "${selectedKos.name}" beserta seluruh kamar di dalamnya? Tindakan ini tidak dapat dibatalkan.`,
+      async () => {
+        if (!onDeleteKos) {
+          showCustomAlert('Fitur Tidak Tersedia', 'Fitur hapus cabang tidak tersedia.');
+          return;
         }
-      } catch (err) {
-        console.error(err);
-        alert('Gagal menghapus cabang kos.');
+        try {
+          await onDeleteKos(selectedKosId);
+          showCustomAlert('Berhasil', 'Cabang Kos Berhasil Dihapus!');
+          // Select next available kos or empty
+          const remaining = kosList.filter(k => k.id !== selectedKosId);
+          if (remaining.length > 0) {
+            setSelectedKosId(remaining[0].id);
+          } else {
+            setSelectedKosId('');
+          }
+        } catch (err) {
+          console.error(err);
+          showCustomAlert('Gagal', 'Gagal menghapus cabang kos.');
+        }
       }
-    }
+    );
   };
 
   // Load selected Kos configuration
@@ -428,23 +472,27 @@ export default function SetupTab({
 
   const handleDeleteLocalRoom = (room: Room) => {
     if (room.status === 'occupied') {
-      alert(`Kamar ${room.roomNumber} sedang terisi penghuni. Silakan lakukan proses checkout penyewa terlebih dahulu untuk menghapus kamar ini.`);
+      showCustomAlert('Tidak Dapat Menghapus', `Kamar ${room.roomNumber} sedang terisi penghuni. Silakan lakukan proses checkout penyewa terlebih dahulu untuk menghapus kamar ini.`);
       return;
     }
 
-    if (confirm(`Apakah Anda yakin ingin menghapus ${room.roomNumber}?`)) {
-      setLocalRooms(prev => prev.filter(r => r.id !== room.id));
-      if (!room.id.startsWith('room-') || rooms.some(r => r.id === room.id)) {
-        // It exists in DB, track for real deletion
-        setDeletedRoomIds(prev => [...prev, room.id]);
+    showCustomConfirm(
+      'Hapus Kamar',
+      `Apakah Anda yakin ingin menghapus ${room.roomNumber}?`,
+      () => {
+        setLocalRooms(prev => prev.filter(r => r.id !== room.id));
+        if (!room.id.startsWith('room-') || rooms.some(r => r.id === room.id)) {
+          // It exists in DB, track for real deletion
+          setDeletedRoomIds(prev => [...prev, room.id]);
+        }
+        setKosTotalRooms(prev => Math.max(0, prev - 1));
       }
-      setKosTotalRooms(prev => Math.max(0, prev - 1));
-    }
+    );
   };
 
   const handleSaveKosData = async () => {
     if (!kosName.trim() || !kosAddress.trim()) {
-      alert('Nama dan Alamat Kos wajib diisi.');
+      showCustomAlert('Input Tidak Valid', 'Nama dan Alamat Kos wajib diisi.');
       return;
     }
 
@@ -455,7 +503,7 @@ export default function SetupTab({
       const roomNumbers = localRooms.map(r => r.roomNumber.trim());
       const uniqueRooms = new Set(roomNumbers);
       if (uniqueRooms.size !== roomNumbers.length) {
-        alert('Terdapat duplikasi nama/nomor kamar. Pastikan seluruh nama kamar unik!');
+        showCustomAlert('Duplikasi Nomor Kamar', 'Terdapat duplikasi nama/nomor kamar. Pastikan seluruh nama kamar unik!');
         setSavingKos(false);
         return;
       }
@@ -480,7 +528,7 @@ export default function SetupTab({
       setTimeout(() => setKosSuccess(false), 3000);
     } catch (err) {
       console.error(err);
-      alert('Gagal menyimpan perubahan unit kos.');
+      showCustomAlert('Gagal', 'Gagal menyimpan perubahan unit kos.');
     } finally {
       setSavingKos(false);
     }
@@ -1569,6 +1617,64 @@ export default function SetupTab({
           >
             <span>{addingNewKos ? 'Menambahkan...' : 'Daftarkan Cabang'}</span>
           </button>
+        </div>
+      </motion.div>
+    </div>
+  )}
+
+  {/* CUSTOM DIALOG MODAL (Alert & Confirm) */}
+  {dialogConfig && dialogConfig.isOpen && (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
+      >
+        <div className="bg-slate-50 px-5 py-4 border-b border-slate-100 flex items-center space-x-2">
+          {dialogConfig.type === 'confirm' ? (
+            <HelpCircle className="w-5 h-5 text-blue-600" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-amber-500" />
+          )}
+          <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+            {dialogConfig.title}
+          </h3>
+        </div>
+        <div className="p-5">
+          <p className="text-xs text-slate-600 font-medium leading-relaxed">
+            {dialogConfig.message}
+          </p>
+        </div>
+        <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex justify-end space-x-2">
+          {dialogConfig.type === 'confirm' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setDialogConfig(null)}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded text-[10px] font-bold uppercase tracking-wider text-slate-600 cursor-pointer transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (dialogConfig.onConfirm) dialogConfig.onConfirm();
+                  setDialogConfig(null);
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+              >
+                Setuju
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDialogConfig(null)}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              OK
+            </button>
+          )}
         </div>
       </motion.div>
     </div>

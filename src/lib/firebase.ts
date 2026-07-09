@@ -16,7 +16,8 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with the custom database ID provided in the configuration
 export const db = initializeFirestore(app, {
-  ignoreUndefinedProperties: true
+  ignoreUndefinedProperties: true,
+  experimentalForceLongPolling: true
 }, "ai-studio-ee1e84f9-8987-42e2-9fd9-d2628ab4943a");
 export const auth = getAuth(app);
 

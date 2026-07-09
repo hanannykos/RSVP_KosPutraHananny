@@ -21,12 +21,25 @@ import {
   FileText,
   Upload,
   Printer,
-  Calendar
+  Calendar,
+  Trash2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { Payment } from '../types';
+import { Payment, Tenant, Room } from '../types';
+
+interface InvoiceData extends Payment {
+  description?: string;
+  extraChargeName?: string;
+  extraChargeAmount?: number;
+  discountAmount?: number;
+  customNotes?: string;
+}
 
 interface PaymentsTabProps {
   payments: Payment[];
+  tenants: Tenant[];
+  rooms?: Room[];
   onMarkPaid: (paymentId: string) => Promise<void>;
   onSendWhatsAppReminder: (payment: Payment, customMsg?: string) => Promise<void>;
   whatsappLogs: any[];
@@ -36,16 +49,20 @@ interface PaymentsTabProps {
     complaintNotification: string;
   };
   onUpdatePayment?: (paymentId: string, updatedData: Partial<Payment>) => Promise<void>;
+  onDeletePayment?: (paymentId: string) => Promise<void>;
 }
 
 export default function PaymentsTab({ 
   payments, 
+  tenants,
+  rooms,
   onMarkPaid, 
   onSendWhatsAppReminder,
   whatsappLogs,
   onRefreshLogs,
   whatsappTemplates,
-  onUpdatePayment
+  onUpdatePayment,
+  onDeletePayment
 }: PaymentsTabProps) {
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
@@ -57,7 +74,225 @@ export default function PaymentsTab({
   const [selectedPaymentForView, setSelectedPaymentForView] = useState<Payment | null>(null);
   const [selectedPaymentForEdit, setSelectedPaymentForEdit] = useState<Payment | null>(null);
   const [selectedPaymentForTransfer, setSelectedPaymentForTransfer] = useState<Payment | null>(null);
-  const [invoicePayment, setInvoicePayment] = useState<Payment | null>(null);
+  const [invoicePayment, setInvoicePayment] = useState<InvoiceData | null>(null);
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+
+  // Invoice Generator custom states
+  const [genPayment, setGenPayment] = useState<Payment | null>(null);
+  const [billingDate, setBillingDate] = useState<string>('');
+  const [genMonth, setGenMonth] = useState<string>('');
+  const [genYear, setGenYear] = useState<number>(2026);
+  const [genAmount, setGenAmount] = useState<number>(0);
+  const [genPaymentOption, setGenPaymentOption] = useState<string>('Bulanan');
+  const [customPaymentOptionText, setCustomPaymentOptionText] = useState<string>('');
+  const [genDescription, setGenDescription] = useState<string>('');
+  const [genCustomNotes, setGenCustomNotes] = useState<string>('');
+  const [genExtraChargeName, setGenExtraChargeName] = useState<string>('');
+  const [genExtraChargeAmount, setGenExtraChargeAmount] = useState<number>(0);
+  const [genDiscountAmount, setGenDiscountAmount] = useState<number>(0);
+  const [genDeadlineDate, setGenDeadlineDate] = useState<string>('');
+  const [genProofOfTransferUrl, setGenProofOfTransferUrl] = useState<string>('');
+  const [genPaidAt, setGenPaidAt] = useState<string>('');
+  const [genPaymentMethod, setGenPaymentMethod] = useState<string>('Transfer Bank');
+
+  // Grouping expanded states
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Payment proof time custom states
+  const [payDay, setPayDay] = useState<string>('09');
+  const [payMonth, setPayMonth] = useState<string>('07');
+  const [payYear, setPayYear] = useState<string>('2026');
+  const [payHour, setPayHour] = useState<string>('12');
+  const [payMinute, setPayMinute] = useState<string>('00');
+
+  const convertToDateInputString = (str: string): string => {
+    if (!str) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    
+    // Check if it has a T character (ISO timestamp)
+    if (str.includes('T')) {
+      return str.split('T')[0];
+    }
+    
+    // Try native Date parsing
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().split('T')[0];
+    }
+    
+    // Custom Indonesian written date like "15 Juli 2026"
+    const MONTHS_ID = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const parts = str.split(' ');
+    if (parts.length === 3) {
+      const day = parts[0].padStart(2, '0');
+      const mName = parts[1];
+      const year = parts[2];
+      const mIdx = MONTHS_ID.findIndex(m => m.toLowerCase() === mName.toLowerCase());
+      if (mIdx !== -1) {
+        const month = (mIdx + 1).toString().padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    return '';
+  };
+
+  const handleSelectForGenerator = (p: Payment) => {
+    setGenPayment(p);
+    setGenMonth(p.month);
+    setGenYear(p.year);
+    setGenAmount(p.amount);
+    
+    const standardOptions = ['Bulanan', 'Sewa Lunas', 'DP Booking', 'Pelunasan', 'Cicilan'];
+    if (p.paymentOption && !standardOptions.includes(p.paymentOption)) {
+      setGenPaymentOption('Lainnya');
+      setCustomPaymentOptionText(p.paymentOption);
+    } else {
+      setGenPaymentOption(p.paymentOption || 'Bulanan');
+      setCustomPaymentOptionText('');
+    }
+
+    // Convert Indonesian month to Month Number
+    const MONTHS_ID = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const monthIdx = MONTHS_ID.findIndex(m => m.toLowerCase() === p.month.toLowerCase());
+    const initialMonth = monthIdx !== -1 ? (monthIdx + 1).toString().padStart(2, '0') : '07';
+    setBillingDate(`${p.year}-${initialMonth}-01`);
+
+    const dlStr = convertToDateInputString(p.deadlineDate || '');
+    setGenDeadlineDate(dlStr);
+
+    setGenDescription(`Sewa Kamar Kos (${p.roomNumber})`);
+    setGenCustomNotes('Terima kasih atas pembayaran Anda. Harap simpan kwitansi resmi ini sebagai bukti pembayaran yang sah.');
+    setGenExtraChargeName('');
+    setGenExtraChargeAmount(0);
+    setGenDiscountAmount(0);
+    setGenProofOfTransferUrl(p.proofOfTransferUrl || '');
+    setGenPaidAt(p.paidAt ? convertToDateInputString(p.paidAt) : '');
+    setGenPaymentMethod(p.paymentMethod || 'Transfer Bank');
+  };
+
+  const handleBillingDateChange = (dateStr: string) => {
+    setBillingDate(dateStr);
+    if (!dateStr) return;
+    
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const MONTHS_ID = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const mIdx = d.getMonth();
+      setGenMonth(MONTHS_ID[mIdx]);
+      setGenYear(d.getFullYear());
+      
+      // Auto-connect deadline based on selected tenant's check-in date
+      if (genPayment && tenants) {
+        const tenant = tenants.find(t => t.id === genPayment.tenantId);
+        if (tenant && tenant.checkInDate) {
+          const checkInObj = new Date(tenant.checkInDate);
+          if (!isNaN(checkInObj.getTime())) {
+            const day = checkInObj.getDate();
+            const year = d.getFullYear();
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const dayStr = day.toString().padStart(2, '0');
+            setGenDeadlineDate(`${year}-${month}-${dayStr}`);
+            return;
+          }
+        }
+      }
+      
+      // Default fallback: 3 days after billing date
+      const deadline = new Date(d);
+      deadline.setDate(deadline.getDate() + 3);
+      const y = deadline.getFullYear();
+      const m = (deadline.getMonth() + 1).toString().padStart(2, '0');
+      const day = deadline.getDate().toString().padStart(2, '0');
+      setGenDeadlineDate(`${y}-${m}-${day}`);
+    }
+  };
+
+  const handleOpenInvoicePreview = () => {
+    if (!genPayment) return;
+    const finalPaymentOption = genPaymentOption === 'Lainnya' ? customPaymentOptionText : genPaymentOption;
+    setInvoicePayment({
+      ...genPayment,
+      amount: Number(genAmount),
+      month: genMonth,
+      year: Number(genYear),
+      paymentOption: finalPaymentOption,
+      deadlineDate: genDeadlineDate,
+      description: genDescription,
+      extraChargeName: genExtraChargeName,
+      extraChargeAmount: Number(genExtraChargeAmount),
+      discountAmount: Number(genDiscountAmount),
+      customNotes: genCustomNotes,
+      proofOfTransferUrl: genProofOfTransferUrl || undefined,
+      paidAt: genPaidAt ? `${genPaidAt}T00:00:00Z` : undefined,
+      paymentMethod: genPaymentMethod,
+    });
+  };
+
+  const handleSaveGeneratorChanges = async () => {
+    if (!genPayment || !onUpdatePayment) return;
+    try {
+      const finalPaymentOption = genPaymentOption === 'Lainnya' ? customPaymentOptionText : genPaymentOption;
+      
+      const updatePayload: Partial<Payment> = {
+        amount: Number(genAmount),
+        month: genMonth,
+        year: Number(genYear),
+        paymentOption: finalPaymentOption,
+        deadlineDate: genDeadlineDate || undefined,
+        proofOfTransferUrl: genProofOfTransferUrl || undefined,
+        paidAt: genPaidAt ? `${genPaidAt}T00:00:00Z` : undefined,
+        paymentMethod: genPaymentMethod,
+      };
+
+      if (genPaidAt || genProofOfTransferUrl) {
+        updatePayload.status = 'paid';
+      }
+
+      await onUpdatePayment(genPayment.id, updatePayload);
+      alert('Perubahan tagihan berhasil disimpan ke database!');
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menyimpan perubahan ke database.');
+    }
+  };
+
+  const handleOpenReminderForGenerator = () => {
+    if (!genPayment) return;
+    
+    const totalAmount = Number(genAmount) + Number(genExtraChargeAmount) - Number(genDiscountAmount);
+    let msg = `Halo Kak ${genPayment.tenantName}, kami ingin menginfokan rincian tagihan sewa bulanan ${genPayment.kosName} (${genPayment.roomNumber}) untuk periode ${genMonth} ${genYear}:\n`;
+    msg += `• Sewa Kamar: ${formatIDR(Number(genAmount))}\n`;
+    if (Number(genExtraChargeAmount) > 0) {
+      msg += `• ${genExtraChargeName || 'Biaya Tambahan'}: ${formatIDR(Number(genExtraChargeAmount))}\n`;
+    }
+    if (Number(genDiscountAmount) > 0) {
+      msg += `• Potongan Harga: -${formatIDR(Number(genDiscountAmount))}\n`;
+    }
+    msg += `\n*TOTAL TAGIHAN: ${formatIDR(totalAmount)}*\n`;
+    if (genCustomNotes) {
+      msg += `\nCatatan:\n${genCustomNotes}\n`;
+    }
+    msg += `\nMohon konfirmasi jika sudah melakukan transfer. Terima kasih! 😊`;
+    
+    setReminderPayment(genPayment);
+    setCustomMsg(msg);
+  };
 
   // Edit form states
   const [editAmount, setEditAmount] = useState<number>(0);
@@ -110,6 +345,15 @@ export default function PaymentsTab({
   const handleOpenTransfer = (p: Payment) => {
     setSelectedPaymentForTransfer(p);
     setProofUrl(p.proofOfTransferUrl || '');
+    
+    // Initialize date time options
+    const now = p.paidAt ? new Date(p.paidAt) : new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setPayDay(pad(now.getDate()));
+    setPayMonth(pad(now.getMonth() + 1));
+    setPayYear(String(now.getFullYear()));
+    setPayHour(pad(now.getHours()));
+    setPayMinute(pad(now.getMinutes()));
   };
 
   const handleSaveTransfer = async (e: React.FormEvent) => {
@@ -118,9 +362,12 @@ export default function PaymentsTab({
 
     setInputtingTransfer(true);
     try {
+      // Construct date string
+      const constructedPaidAt = `${payYear}-${String(payMonth).padStart(2, '0')}-${String(payDay).padStart(2, '0')}T${String(payHour).padStart(2, '0')}:${String(payMinute).padStart(2, '0')}:00.000Z`;
+
       await onUpdatePayment(selectedPaymentForTransfer.id, {
         status: 'paid',
-        paidAt: new Date().toISOString(),
+        paidAt: constructedPaidAt,
         proofOfTransferUrl: proofUrl.trim() || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600', // default mock proof image if empty
         proofOfTransferUploadedAt: new Date().toISOString()
       });
@@ -143,6 +390,19 @@ export default function PaymentsTab({
       return matchSearch && matchFilter;
     });
   }, [payments, search, filter]);
+
+  // Group filteredPayments by kosName
+  const paymentsByKos = useMemo(() => {
+    const groups: Record<string, Payment[]> = {};
+    filteredPayments.forEach((p) => {
+      const kos = p.kosName || 'Umum';
+      if (!groups[kos]) {
+        groups[kos] = [];
+      }
+      groups[kos].push(p);
+    });
+    return groups;
+  }, [filteredPayments]);
 
   const handleOpenReminder = (pay: Payment) => {
     setReminderPayment(pay);
@@ -239,162 +499,801 @@ export default function PaymentsTab({
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto pr-1">
+          <div className="max-h-[550px] overflow-y-auto pr-1 space-y-6">
             {filteredPayments.length === 0 ? (
               <p className="text-center text-xs text-slate-400 py-10 font-bold uppercase tracking-wider">Tidak ada data tagihan.</p>
             ) : (
-              filteredPayments.map((p) => (
-                <div key={p.id} className="py-3 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50 px-2.5 rounded transition-all">
-                  <div className="flex items-start space-x-2.5">
-                    <div className={`p-2 rounded shrink-0 ${
-                      p.status === 'paid' 
-                        ? 'bg-emerald-50 text-emerald-600' 
-                        : p.status === 'overdue' 
-                          ? 'bg-rose-50 text-rose-600 animate-pulse'
-                          : 'bg-amber-50 text-amber-600'
-                    }`}>
-                      <DollarSign className="w-4 h-4" />
+              Object.keys(paymentsByKos).sort().map((kosName) => {
+                const kosPayments = paymentsByKos[kosName];
+                
+                // Group by tenantName inside this Kos
+                const paymentsByTenant: Record<string, Payment[]> = {};
+                kosPayments.forEach(p => {
+                  const tenant = p.tenantName;
+                  if (!paymentsByTenant[tenant]) {
+                    paymentsByTenant[tenant] = [];
+                  }
+                  paymentsByTenant[tenant].push(p);
+                });
+
+                const sortedTenants = Object.keys(paymentsByTenant).sort();
+
+                return (
+                  <div key={kosName} className="space-y-3">
+                    {/* Kos Title Header */}
+                    <div className="bg-slate-100/80 px-3 py-1.5 rounded flex items-center justify-between text-slate-700">
+                      <span className="text-[10px] font-black uppercase tracking-wider flex items-center">
+                        <DollarSign className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                        Rumah Kos: {kosName}
+                      </span>
+                      <span className="text-[9px] font-bold bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">
+                        {kosPayments.length} Tagihan
+                      </span>
                     </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <p className="font-bold text-xs text-slate-800">{p.tenantName}</p>
-                        <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
-                          p.status === 'paid' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                            : p.status === 'overdue'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
-                        }`}>
-                          {p.status === 'paid' ? 'Lunas' : p.status === 'overdue' ? 'Menunggak' : 'Menunggu'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-500 mt-0.5 uppercase tracking-wider">
-                        {p.kosName} — {p.roomNumber}
-                      </p>
-                      <p className="text-[9px] text-slate-400 font-mono mt-0.5">{p.invoiceNumber}</p>
-                      
-                      {/* Deadline Date Display */}
-                      <div className="flex items-center space-x-1.5 mt-1">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                          p.status === 'paid'
-                            ? 'text-slate-400'
-                            : p.status === 'overdue'
-                              ? 'text-rose-600 font-extrabold animate-pulse'
-                              : 'text-amber-600'
-                        }`}>
-                          Tenggat: {p.deadlineDate ? p.deadlineDate : '-'}
-                        </span>
-                      </div>
+
+                    <div className="space-y-3 pl-1">
+                      {sortedTenants.map((tenantName) => {
+                        const tenantPayments = paymentsByTenant[tenantName];
+                        
+                        // Scenario A: Tenant has 2 or more bills -> Collective with Pipeline Timeline
+                        if (tenantPayments.length >= 2) {
+                          const groupKey = `${kosName}-${tenantName}`;
+                          const isExpanded = expandedGroups[groupKey];
+                          const totalAmount = tenantPayments.reduce((sum, p) => sum + p.amount, 0);
+                          
+                          // Determine collective status
+                          const hasOverdue = tenantPayments.some(p => p.status === 'overdue');
+                          const allPaid = tenantPayments.every(p => p.status === 'paid');
+                          const groupStatus = allPaid ? 'paid' : hasOverdue ? 'overdue' : 'pending';
+
+                          return (
+                            <div key={groupKey} className="border border-slate-200/80 rounded-lg p-3 bg-slate-50/40 hover:bg-slate-50 transition-all space-y-3">
+                              {/* Header Row */}
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-start space-x-2.5">
+                                  <div className={`p-2 rounded shrink-0 ${
+                                    groupStatus === 'paid' 
+                                      ? 'bg-emerald-50 text-emerald-600' 
+                                      : groupStatus === 'overdue' 
+                                        ? 'bg-rose-50 text-rose-600 animate-pulse'
+                                        : 'bg-amber-50 text-amber-600'
+                                  }`}>
+                                    <DollarSign className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center space-x-2">
+                                      <p className="font-extrabold text-xs text-slate-800">{tenantName}</p>
+                                      <span className="text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                        {tenantPayments.length} Tagihan Kolektif
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-0.5 uppercase tracking-wider">
+                                      {kosName} — Kamar {tenantPayments[0].roomNumber}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center space-x-4">
+                                  <div className="text-right">
+                                    <p className="font-extrabold text-xs text-slate-900 font-mono">{formatIDR(totalAmount)}</p>
+                                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Total Akumulasi</p>
+                                  </div>
+                                  <button
+                                    onClick={() => toggleGroup(groupKey)}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded transition-colors cursor-pointer"
+                                    title={isExpanded ? "Tutup Rincian" : "Buka Rincian Tagihan"}
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Collective Pipeline Timeline */}
+                              {isExpanded && (
+                                <div className="relative pl-6 border-l-2 border-slate-200 ml-4 space-y-4 my-2 pt-1 pb-1">
+                                  {tenantPayments.map((p) => (
+                                    <div key={p.id} className="relative">
+                                      {/* Timeline Circle Indicator */}
+                                      <div className={`absolute -left-[32px] top-1.5 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center ${
+                                        p.status === 'paid' 
+                                          ? 'border-emerald-500 ring-4 ring-emerald-50' 
+                                          : p.status === 'overdue'
+                                            ? 'border-rose-500 ring-4 ring-rose-50 animate-pulse'
+                                            : 'border-amber-500 ring-4 ring-amber-50'
+                                      }`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${
+                                          p.status === 'paid' 
+                                            ? 'bg-emerald-500' 
+                                            : p.status === 'overdue'
+                                              ? 'bg-rose-500'
+                                              : 'bg-amber-500'
+                                        }`} />
+                                      </div>
+
+                                      {/* Timeline Row Content */}
+                                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-2.5 rounded border border-slate-100 shadow-2xs hover:shadow-xs transition-shadow">
+                                        <div>
+                                          <div className="flex items-center space-x-1.5">
+                                            <p className="font-bold text-[11px] text-slate-800">Periode: {p.month} {p.year}</p>
+                                            <span className={`text-[7px] uppercase tracking-wider font-extrabold px-1 py-0.2 rounded ${
+                                              p.status === 'paid' 
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                                : p.status === 'overdue'
+                                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                            }`}>
+                                              {p.status === 'paid' ? 'Lunas' : p.status === 'overdue' ? 'Menunggak' : 'Menunggu'}
+                                            </span>
+                                          </div>
+                                          <p className="text-[9px] text-slate-400 font-mono mt-0.5">{p.invoiceNumber}</p>
+                                          
+                                          {/* Deadline Date */}
+                                          <div className="flex items-center space-x-1 mt-1 text-slate-400">
+                                            <Calendar className="w-3 h-3" />
+                                            <span className={`text-[8px] font-bold uppercase tracking-wider ${
+                                              p.status === 'paid' ? 'text-slate-400' : p.status === 'overdue' ? 'text-rose-600 animate-pulse' : 'text-amber-600'
+                                            }`}>
+                                              Tenggat: {p.deadlineDate ? p.deadlineDate : '-'}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 self-end md:self-auto shrink-0">
+                                          <p className="font-extrabold text-xs text-slate-800 font-mono sm:text-right">{formatIDR(p.amount)}</p>
+                                          
+                                          <div className="flex items-center gap-1">
+                                            {/* View Button */}
+                                            <button
+                                              onClick={() => setSelectedPaymentForView(p)}
+                                              className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
+                                              title="Lihat Detail"
+                                            >
+                                              <Eye className="w-3 h-3" />
+                                            </button>
+
+                                            {/* Generate Invoice Button */}
+                                            <button
+                                              onClick={() => handleSelectForGenerator(p)}
+                                              className={`p-1 rounded border transition-all cursor-pointer ${
+                                                genPayment?.id === p.id 
+                                                  ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
+                                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
+                                              }`}
+                                              title="Load into Invoice Generator"
+                                            >
+                                              <FileText className="w-3 h-3" />
+                                            </button>
+
+                                            {/* Edit Button */}
+                                            <button
+                                              onClick={() => handleOpenEdit(p)}
+                                              className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded transition-colors cursor-pointer"
+                                              title="Edit Tagihan"
+                                            >
+                                              <Edit className="w-3 h-3" />
+                                            </button>
+
+                                            {/* Input Proof Button */}
+                                            <button
+                                              onClick={() => handleOpenTransfer(p)}
+                                              className="p-1 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 rounded transition-colors cursor-pointer"
+                                              title="Input Bukti"
+                                            >
+                                              <Upload className="w-3 h-3" />
+                                            </button>
+
+                                            {/* Delete Button */}
+                                            {onDeletePayment && (
+                                              <button
+                                                onClick={() => setPaymentToDelete(p)}
+                                                className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 rounded transition-colors cursor-pointer"
+                                                title="Hapus"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            )}
+
+                                            {p.status !== 'paid' ? (
+                                              <>
+                                                <button
+                                                  onClick={() => onMarkPaid(p.id)}
+                                                  className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[8px] font-bold shadow-xs transition-colors uppercase tracking-wider cursor-pointer"
+                                                  title="Tandai Sudah Lunas"
+                                                >
+                                                  Lunas
+                                                </button>
+                                                <button
+                                                  onClick={() => handleOpenReminder(p)}
+                                                  className="p-1 border border-blue-200 text-blue-600 bg-blue-50/50 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                                  title="Kirim WhatsApp"
+                                                >
+                                                  <MessageSquare className="w-2.5 h-2.5" />
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <div className="flex items-center space-x-0.5 text-[8px] text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded font-bold uppercase tracking-wider">
+                                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Scenario B: Tenant has exactly 1 bill -> Render single row (similar to original design)
+                        const p = tenantPayments[0];
+                        return (
+                          <div key={p.id} className="py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50 border border-slate-100 rounded px-2.5 transition-all">
+                            <div className="flex items-start space-x-2.5">
+                              <div className={`p-2 rounded shrink-0 ${
+                                p.status === 'paid' 
+                                  ? 'bg-emerald-50 text-emerald-600' 
+                                  : p.status === 'overdue' 
+                                    ? 'bg-rose-50 text-rose-600 animate-pulse'
+                                    : 'bg-amber-50 text-amber-600'
+                              }`}>
+                                <DollarSign className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <p className="font-bold text-xs text-slate-800">{p.tenantName}</p>
+                                  <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
+                                    p.status === 'paid' 
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                      : p.status === 'overdue'
+                                        ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                        : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                  }`}>
+                                    {p.status === 'paid' ? 'Lunas' : p.status === 'overdue' ? 'Menunggak' : 'Menunggu'}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-500 mt-0.5 uppercase tracking-wider">
+                                  Kamar No: {p.roomNumber}
+                                </p>
+                                <p className="text-[9px] text-slate-400 font-mono mt-0.5">{p.invoiceNumber}</p>
+                                
+                                {/* Deadline Date Display */}
+                                <div className="flex items-center space-x-1.5 mt-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                                    p.status === 'paid'
+                                      ? 'text-slate-400'
+                                      : p.status === 'overdue'
+                                        ? 'text-rose-600 font-extrabold animate-pulse'
+                                        : 'text-amber-600'
+                                  }`}>
+                                    Tenggat: {p.deadlineDate ? p.deadlineDate : '-'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 self-end md:self-auto shrink-0">
+                              <div className="text-left sm:text-right shrink-0">
+                                <p className="font-bold text-xs text-slate-800 font-mono">{formatIDR(p.amount)}</p>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Bulan: {p.month} {p.year}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {/* View Button */}
+                                <button
+                                  onClick={() => setSelectedPaymentForView(p)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
+                                  title="Lihat Detail Tagihan"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Generate Invoice Button */}
+                                <button
+                                  onClick={() => handleSelectForGenerator(p)}
+                                  className={`p-1.5 rounded border transition-all cursor-pointer ${
+                                    genPayment?.id === p.id 
+                                      ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
+                                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
+                                  }`}
+                                  title="Load into Invoice Generator"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Edit Button */}
+                                <button
+                                  onClick={() => handleOpenEdit(p)}
+                                  className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded transition-colors cursor-pointer"
+                                  title="Edit Data Tagihan"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Input Proof of Transfer Button */}
+                                <button
+                                  onClick={() => handleOpenTransfer(p)}
+                                  className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 rounded transition-colors cursor-pointer"
+                                  title="Input Bukti Transfer"
+                                >
+                                  <Upload className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Delete Button */}
+                                {onDeletePayment && (
+                                  <button
+                                    onClick={() => setPaymentToDelete(p)}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 rounded transition-colors cursor-pointer"
+                                    title="Hapus Data Tagihan"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {p.status !== 'paid' ? (
+                                  <>
+                                    <button
+                                      onClick={() => onMarkPaid(p.id)}
+                                      className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9px] font-bold shadow-xs transition-colors uppercase tracking-wider cursor-pointer"
+                                      title="Tandai Sudah Lunas"
+                                    >
+                                      Set Lunas
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenReminder(p)}
+                                      className="p-1 border border-blue-200 text-blue-600 bg-blue-50/50 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                      title="Kirim Notifikasi Pengingat WhatsApp"
+                                    >
+                                      <MessageSquare className="w-3 h-3" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className="flex items-center space-x-1 text-[9px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded font-bold uppercase tracking-wider">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Lunas</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 self-end md:self-auto shrink-0">
-                    <div className="text-left sm:text-right shrink-0">
-                      <p className="font-bold text-xs text-slate-800 font-mono">{formatIDR(p.amount)}</p>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Bulan: {p.month} {p.year}</p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {/* View Button */}
-                      <button
-                        onClick={() => setSelectedPaymentForView(p)}
-                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
-                        title="Lihat Detail Tagihan"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Generate Invoice Button */}
-                      <button
-                        onClick={() => setInvoicePayment(p)}
-                        className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 rounded transition-colors cursor-pointer"
-                        title="Generate Invoice / Kwitansi"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Edit Button */}
-                      <button
-                        onClick={() => handleOpenEdit(p)}
-                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-100 rounded transition-colors cursor-pointer"
-                        title="Edit Data Tagihan"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Input Proof of Transfer Button */}
-                      <button
-                        onClick={() => handleOpenTransfer(p)}
-                        className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-100 rounded transition-colors cursor-pointer"
-                        title="Input Bukti Transfer"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                      </button>
-
-                      {p.status !== 'paid' ? (
-                        <>
-                          <button
-                            onClick={() => onMarkPaid(p.id)}
-                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9px] font-bold shadow-xs transition-colors uppercase tracking-wider cursor-pointer"
-                            title="Tandai Sudah Lunas"
-                          >
-                            Set Lunas
-                          </button>
-                          <button
-                            onClick={() => handleOpenReminder(p)}
-                            className="p-1 border border-blue-200 text-blue-600 bg-blue-50/50 hover:bg-blue-50 rounded transition-colors cursor-pointer"
-                            title="Kirim Notifikasi Pengingat WhatsApp"
-                          >
-                            <MessageSquare className="w-3 h-3" />
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex items-center space-x-1 text-[9px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded font-bold uppercase tracking-wider">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Lunas</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
-        {/* WhatsApp Notification Simulator (Right 1/3) */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
-          <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center">
-              <Smartphone className="w-4 h-4 mr-1.5 text-blue-600 animate-bounce" />
-              Notifikasi WhatsApp Live Log
+        {/* Invoice Generator Panel (Right 1/3) */}
+        <div className="bg-white p-5 rounded-lg border border-slate-200 space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-200 pb-2.5">
+            <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center">
+              <FileText className="w-4.5 h-4.5 mr-2 text-blue-600" />
+              Invoice Generator
             </h3>
-            <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-              Simulasi Server
+            <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">
+              Kustomisasi
             </span>
           </div>
 
-          <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-            {whatsappLogs.length === 0 ? (
-              <p className="text-center text-xs text-slate-400 py-10 font-bold uppercase tracking-wider">Belum ada riwayat notifikasi dikirim.</p>
-            ) : (
-              whatsappLogs.map((log) => (
-                <div key={log.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded space-y-1.5">
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="font-bold text-slate-800">Ke: {log.tenantName} ({log.roomNumber})</span>
-                    <span className="text-[8px] text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded font-bold uppercase">Sent</span>
+          {!genPayment ? (
+            <div className="text-center py-12 px-4 space-y-3">
+              <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto border border-slate-100 text-slate-400">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Belum Ada Tagihan Terpilih</p>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider leading-relaxed">
+                  Silakan klik tombol <span className="text-blue-600 font-bold">Generate Invoice</span> (ikon dokumen kertas biru) pada baris tagihan penyewa di samping untuk mulai memodifikasi detail kwitansi.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 text-xs">
+              {/* Selected Tenant Summary Box */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Penyewa Terpilih:</span>
+                <p className="font-bold text-slate-800 text-sm uppercase">{genPayment.tenantName}</p>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+                  Kamar: <span className="font-bold text-slate-700">{genPayment.roomNumber}</span> | Cabang: <span className="font-bold text-slate-700">{genPayment.kosName}</span>
+                </p>
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                {/* Billing Calendar Period (Automatic Calendar Sync) */}
+                <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg space-y-2.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest flex items-center">
+                      <Calendar className="w-3.5 h-3.5 mr-1 text-blue-600 animate-pulse" />
+                      Koneksi Kalender Penagihan
+                    </span>
+                    {(() => {
+                      const tenant = tenants?.find(t => t.id === genPayment.tenantId);
+                      if (tenant && tenant.checkInDate) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const checkIn = tenant.checkInDate;
+                              const dInput = convertToDateInputString(checkIn);
+                              if (dInput) {
+                                handleBillingDateChange(dInput);
+                              }
+                            }}
+                            className="text-[9px] bg-blue-100 hover:bg-blue-200 text-blue-700 font-extrabold px-2 py-0.5 rounded transition-all flex items-center space-x-1"
+                            title={`Mulai Sewa: ${tenant.checkInDate}`}
+                          >
+                            <Clock className="w-2.5 h-2.5" />
+                            <span>Sesuai Mulai Sewa</span>
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
-                  <p className="text-[10px] text-slate-600 bg-white border border-slate-200 p-2 rounded font-mono whitespace-pre-wrap leading-tight">
-                    {log.message}
-                  </p>
-                  <p className="text-[9px] text-slate-400 text-right font-mono">
-                    {new Date(log.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
-                  </p>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Tanggal Tagihan</label>
+                      <input
+                        type="date"
+                        value={billingDate}
+                        onChange={(e) => handleBillingDateChange(e.target.value)}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2.5 text-xs font-bold font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Periode Hasil</label>
+                      <div className="w-full bg-slate-100 border border-slate-200 rounded py-1.5 px-2.5 text-xs font-black text-slate-700 uppercase tracking-wider text-center">
+                        {genMonth} {genYear}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const tenant = tenants?.find(t => t.id === genPayment.tenantId);
+                    if (tenant && tenant.checkInDate) {
+                      return (
+                        <p className="text-[8px] text-blue-600/80 font-bold uppercase tracking-wide">
+                          * Terkoneksi otomatis dengan data penyewa. Batas deadline dihitung dari tanggal check-in ({tenant.checkInDate}).
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
-              ))
-            )}
-          </div>
+
+                {/* Amount & Option Row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Biaya Kamar Dasar (Rp)</label>
+                    <input
+                      type="number"
+                      value={genAmount}
+                      onChange={(e) => setGenAmount(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Opsi Pembayaran</label>
+                    <select
+                      value={genPaymentOption}
+                      onChange={(e) => setGenPaymentOption(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold"
+                    >
+                      {(() => {
+                        const r = rooms?.find(rm => rm.id === genPayment.roomId);
+                        if (r) {
+                          const options = [];
+                          if (r.payMonthly) options.push(<option key="Bulanan" value="Bulanan">Bulanan</option>);
+                          if (r.payThreeMonths) options.push(<option key="3 Bulanan" value="3 Bulanan">3 Bulanan</option>);
+                          if (r.paySixMonths) options.push(<option key="6 Bulanan" value="6 Bulanan">6 Bulanan</option>);
+                          if (r.payYearly) options.push(<option key="Tahunan" value="Tahunan">Tahunan</option>);
+                          
+                          // Fallback if no active options
+                          if (options.length === 0) {
+                            options.push(<option key="Bulanan" value="Bulanan">Bulanan</option>);
+                          }
+                          return (
+                            <>
+                              <optgroup label="Opsi Aktif Kamar">
+                                {options}
+                              </optgroup>
+                              <optgroup label="Opsi Lainnya">
+                                <option value="Sewa Lunas">Sewa Lunas</option>
+                                <option value="DP Booking">DP Booking</option>
+                                <option value="Pelunasan">Pelunasan</option>
+                                <option value="Cicilan">Cicilan</option>
+                                <option value="Lainnya">Lainnya (Isi Manual)</option>
+                              </optgroup>
+                            </>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <option value="Bulanan">Bulanan</option>
+                              <option value="3 Bulanan">3 Bulanan</option>
+                              <option value="6 Bulanan">6 Bulanan</option>
+                              <option value="Tahunan">Tahunan</option>
+                              <option value="Sewa Lunas">Sewa Lunas</option>
+                              <option value="DP Booking">DP Booking</option>
+                              <option value="Pelunasan">Pelunasan</option>
+                              <option value="Cicilan">Cicilan</option>
+                              <option value="Lainnya">Lainnya (Isi Manual)</option>
+                            </>
+                          );
+                        }
+                      })()}
+                    </select>
+
+                    {genPaymentOption === 'Lainnya' && (
+                      <div className="mt-1">
+                        <input
+                          type="text"
+                          value={customPaymentOptionText}
+                          onChange={(e) => setCustomPaymentOptionText(e.target.value)}
+                          className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2 text-[11px] font-bold"
+                          placeholder="Masukkan opsi kustom..."
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deadline Date (Smart Calendar Picker) */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Tenggat Pembayaran (Deadline)</label>
+                  <input
+                    type="date"
+                    value={genDeadlineDate}
+                    onChange={(e) => setGenDeadlineDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold font-mono"
+                  />
+                </div>
+
+                {/* PAYMENT STATUS & PROOF SECTION */}
+                <div className="p-3 bg-purple-50/40 border border-purple-100 rounded-lg space-y-2.5">
+                  <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest flex items-center">
+                    <CheckCircle className="w-3.5 h-3.5 mr-1 text-purple-600" />
+                    Status & Bukti Pembayaran
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Tanggal Pembayaran</label>
+                      <input
+                        type="date"
+                        value={genPaidAt}
+                        onChange={(e) => setGenPaidAt(e.target.value)}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2.5 text-xs font-bold font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Metode Pembayaran</label>
+                      <select
+                        value={genPaymentMethod}
+                        onChange={(e) => setGenPaymentMethod(e.target.value)}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2 text-xs font-bold"
+                      >
+                        <option value="Transfer Bank">Transfer Bank</option>
+                        <option value="Tunai">Tunai (Cash)</option>
+                        <option value="QRIS / E-Wallet">QRIS / E-Wallet</option>
+                        <option value="BCA Transfer">BCA Transfer</option>
+                        <option value="Mandiri Transfer">Mandiri Transfer</option>
+                        <option value="Gopay">Gopay</option>
+                        <option value="OVO">OVO</option>
+                        <option value="ShopeePay">ShopeePay</option>
+                        <option value="Lainnya">Lainnya</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Metode Bukti</label>
+                    <button
+                      type="button"
+                      onClick={() => setGenProofOfTransferUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600')}
+                      className="w-full bg-purple-100 hover:bg-purple-200 text-purple-700 font-extrabold py-1.5 px-2 rounded text-[9px] uppercase tracking-wider transition-all"
+                    >
+                      Gunakan Contoh Struk
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Input File / Foto Bukti Transfer</label>
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-purple-200 hover:border-purple-400 bg-white hover:bg-purple-50/30 rounded-lg p-3 cursor-pointer transition-all text-center">
+                      <span className="text-[10px] font-extrabold text-purple-700 flex items-center">
+                        <FileText className="w-3.5 h-3.5 mr-1" />
+                        Unggah Foto Struk / Bukti
+                      </span>
+                      <span className="text-[8px] text-slate-400 font-semibold mt-0.5">Klik untuk memilih gambar (Maks 5MB)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              if (event.target?.result) {
+                                setGenProofOfTransferUrl(event.target.result as string);
+                                if (!genPaidAt) {
+                                  setGenPaidAt(new Date().toISOString().split('T')[0]);
+                                }
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Bukti Transfer (URL Gambar / Base64)</label>
+                    <div className="flex space-x-1">
+                      <input
+                        type="text"
+                        value={genProofOfTransferUrl}
+                        onChange={(e) => setGenProofOfTransferUrl(e.target.value)}
+                        className="flex-1 bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2.5 text-xs font-bold font-mono"
+                        placeholder="URL Bukti atau Base64"
+                      />
+                      {genProofOfTransferUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Hapus bukti transfer ini?')) {
+                              setGenProofOfTransferUrl('');
+                            }
+                          }}
+                          className="px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded text-[9px] font-black uppercase transition-all"
+                          title="Hapus Bukti"
+                        >
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {genProofOfTransferUrl && (
+                    <div className="mt-2 p-2 bg-white border border-purple-100 rounded-lg text-center space-y-1.5 relative">
+                      <p className="text-[8px] text-purple-700 font-extrabold uppercase tracking-widest">Pratinjau Bukti Transfer:</p>
+                      <div className="relative inline-block border rounded overflow-hidden shadow-xs max-w-full">
+                        <img 
+                          src={genProofOfTransferUrl} 
+                          alt="Preview Bukti" 
+                          className="max-h-36 mx-auto object-contain rounded" 
+                          referrerPolicy="no-referrer" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGenProofOfTransferUrl('');
+                          }}
+                          className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition-colors"
+                          title="Hapus Bukti"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex justify-center space-x-2">
+                        <a 
+                          href={genProofOfTransferUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-[9px] text-purple-600 hover:underline font-extrabold uppercase"
+                        >
+                          Lihat Ukuran Penuh ↗
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Main Description */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Keterangan Layanan Utama</label>
+                  <input
+                    type="text"
+                    value={genDescription}
+                    onChange={(e) => setGenDescription(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold"
+                    placeholder="Sewa Kamar Kos (Room Number)"
+                  />
+                </div>
+
+                {/* Extra Charges Section */}
+                <div className="p-2.5 border border-slate-100 bg-slate-50/50 rounded-lg space-y-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Biaya Tambahan Lainnya (Optional)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-extrabold text-slate-400 uppercase">Nama Biaya</label>
+                      <input
+                        type="text"
+                        value={genExtraChargeName}
+                        onChange={(e) => setGenExtraChargeName(e.target.value)}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2 text-[11px] font-bold"
+                        placeholder="Contoh: Biaya Listrik AC"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-extrabold text-slate-400 uppercase">Nominal Tambahan (Rp)</label>
+                      <input
+                        type="number"
+                        value={genExtraChargeAmount || ''}
+                        onChange={(e) => setGenExtraChargeAmount(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-200 focus:border-blue-500 outline-none rounded py-1 px-2 text-[11px] font-bold font-mono"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Discount Section */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Potongan Harga / Diskon (Rp)</label>
+                  <input
+                    type="number"
+                    value={genDiscountAmount || ''}
+                    onChange={(e) => setGenDiscountAmount(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold font-mono"
+                    placeholder="Contoh: 50000"
+                  />
+                </div>
+
+                {/* Custom Notes / Keterangan */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Keterangan / Catatan Khusus Invoice</label>
+                  <textarea
+                    value={genCustomNotes}
+                    onChange={(e) => setGenCustomNotes(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded p-2 text-xs font-semibold h-16 resize-none leading-relaxed"
+                    placeholder="Masukkan pesan atau ketentuan khusus kwitansi..."
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 space-y-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleOpenInvoicePreview}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-black rounded text-[10px] uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-all shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Preview & Cetak Kwitansi Resmi</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveGeneratorChanges}
+                    className="py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded text-[10px] uppercase tracking-wider flex items-center justify-center space-x-1 transition-all cursor-pointer"
+                    title="Simpan nominal & periode sewa yang telah diubah ke database"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Simpan Perubahan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenReminderForGenerator}
+                    className="py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded text-[10px] uppercase tracking-wider flex items-center justify-center space-x-1 transition-all shadow-xs cursor-pointer"
+                    title="Kirim pemberitahuan tagihan ini beserta rincian tambahan ke WhatsApp"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>Kirim WA</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -582,10 +1481,48 @@ export default function PaymentsTab({
                     onChange={(e) => setEditPaymentOption(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-2.5 text-xs font-bold"
                   >
-                    <option value="Bulanan">Bulanan</option>
-                    <option value="3 Bulanan">3 Bulanan</option>
-                    <option value="6 Bulanan">6 Bulanan</option>
-                    <option value="Tahunan">Tahunan</option>
+                    {(() => {
+                      const r = rooms?.find(rm => rm.id === selectedPaymentForEdit.roomId);
+                      if (r) {
+                        const options = [];
+                        if (r.payMonthly) options.push(<option key="Bulanan" value="Bulanan">Bulanan</option>);
+                        if (r.payThreeMonths) options.push(<option key="3 Bulanan" value="3 Bulanan">3 Bulanan</option>);
+                        if (r.paySixMonths) options.push(<option key="6 Bulanan" value="6 Bulanan">6 Bulanan</option>);
+                        if (r.payYearly) options.push(<option key="Tahunan" value="Tahunan">Tahunan</option>);
+                        
+                        if (options.length === 0) {
+                          options.push(<option key="Bulanan" value="Bulanan">Bulanan</option>);
+                        }
+                        return (
+                          <>
+                            <optgroup label="Opsi Aktif Kamar">
+                              {options}
+                            </optgroup>
+                            <optgroup label="Opsi Lainnya">
+                              <option value="Sewa Lunas">Sewa Lunas</option>
+                              <option value="DP Booking">DP Booking</option>
+                              <option value="Pelunasan">Pelunasan</option>
+                              <option value="Cicilan">Cicilan</option>
+                              <option value="Lainnya">Lainnya</option>
+                            </optgroup>
+                          </>
+                        );
+                      } else {
+                        return (
+                          <>
+                            <option value="Bulanan">Bulanan</option>
+                            <option value="3 Bulanan">3 Bulanan</option>
+                            <option value="6 Bulanan">6 Bulanan</option>
+                            <option value="Tahunan">Tahunan</option>
+                            <option value="Sewa Lunas">Sewa Lunas</option>
+                            <option value="DP Booking">DP Booking</option>
+                            <option value="Pelunasan">Pelunasan</option>
+                            <option value="Cicilan">Cicilan</option>
+                            <option value="Lainnya">Lainnya</option>
+                          </>
+                        );
+                      }
+                    })()}
                   </select>
                 </div>
               </div>
@@ -697,36 +1634,119 @@ export default function PaymentsTab({
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">URL Gambar Bukti Transfer *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="https://contoh.com/struk.jpg"
-                  value={proofUrl}
-                  onChange={(e) => setProofUrl(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-3 text-xs font-bold font-mono transition-all"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="https://contoh.com/struk.jpg"
+                    value={proofUrl}
+                    onChange={(e) => setProofUrl(e.target.value)}
+                    className="flex-1 bg-slate-50 border border-slate-200 focus:border-blue-500 outline-none rounded py-1.5 px-3 text-xs font-bold font-mono transition-all"
+                  />
+                  <label className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-extrabold rounded text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center space-x-1 whitespace-nowrap">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Foto</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            if (event.target?.result) {
+                              setProofUrl(event.target.result as string);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
 
-              {/* Preset Buttons for easy selection */}
-              <div className="space-y-2">
-                <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Pilih Cepat Bukti Transfer Simulasi:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setProofUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600')}
-                    className="p-2 border border-slate-200 hover:border-purple-500 hover:bg-purple-50 rounded text-left transition-all cursor-pointer"
-                  >
-                    <p className="font-bold text-[10px] text-slate-800">Mandiri Transfer</p>
-                    <p className="text-[9px] text-slate-400 font-mono">Preset Struk Mandiri</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProofUrl('https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&q=80&w=600')}
-                    className="p-2 border border-slate-200 hover:border-purple-500 hover:bg-purple-50 rounded text-left transition-all cursor-pointer"
-                  >
-                    <p className="font-bold text-[10px] text-slate-800">BCA KlikPay</p>
-                    <p className="text-[9px] text-slate-400 font-mono">Preset Struk BCA</p>
-                  </button>
+              {/* Opsi Pembayaran inputs */}
+              <div className="space-y-2 bg-slate-50 border border-slate-200 p-3 rounded-lg">
+                <p className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider">Opsi Pembayaran (Waktu Transfer):</p>
+                <div className="grid grid-cols-5 gap-1.5">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Tanggal</label>
+                    <select
+                      value={payDay}
+                      onChange={(e) => setPayDay(e.target.value)}
+                      className="w-full text-[10px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1 py-1 focus:outline-blue-500"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0')).map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Bulan</label>
+                    <select
+                      value={payMonth}
+                      onChange={(e) => setPayMonth(e.target.value)}
+                      className="w-full text-[10px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1 py-1 focus:outline-blue-500"
+                    >
+                      {[
+                        { val: '01', lbl: 'Januari' },
+                        { val: '02', lbl: 'Februari' },
+                        { val: '03', lbl: 'Maret' },
+                        { val: '04', lbl: 'April' },
+                        { val: '05', lbl: 'Mei' },
+                        { val: '06', lbl: 'Juni' },
+                        { val: '07', lbl: 'Juli' },
+                        { val: '08', lbl: 'Agustus' },
+                        { val: '09', lbl: 'September' },
+                        { val: '10', lbl: 'Oktober' },
+                        { val: '11', lbl: 'November' },
+                        { val: '12', lbl: 'Desember' }
+                      ].map(m => (
+                        <option key={m.val} value={m.val}>{m.lbl}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Tahun</label>
+                    <select
+                      value={payYear}
+                      onChange={(e) => setPayYear(e.target.value)}
+                      className="w-full text-[10px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1 py-1 focus:outline-blue-500"
+                    >
+                      {['2025', '2026', '2027', '2028'].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest block">Waktu</label>
+                    <div className="flex items-center space-x-0.5">
+                      <select
+                        value={payHour}
+                        onChange={(e) => setPayHour(e.target.value)}
+                        className="w-full text-[9px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-0.5 py-1 focus:outline-blue-500 text-center"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                      <span className="text-slate-400 font-bold text-[9px]">:</span>
+                      <select
+                        value={payMinute}
+                        onChange={(e) => setPayMinute(e.target.value)}
+                        className="w-full text-[9px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-0.5 py-1 focus:outline-blue-500 text-center"
+                      >
+                        {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -760,14 +1780,14 @@ export default function PaymentsTab({
 
       {/* GENERATE INVOICE MODAL (BEAUTIFUL PRINTABLE RECEIPT) */}
       {invoicePayment && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-6 overflow-hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white w-full max-w-2xl rounded-lg border border-slate-300 shadow-2xl overflow-hidden my-8"
+            className="bg-white w-full max-w-2xl rounded-lg border border-slate-300 shadow-2xl overflow-hidden my-auto flex flex-col max-h-[90vh] sm:max-h-[92vh] print:max-h-none print:my-0 print:border-none print:shadow-none print:rounded-none"
           >
             {/* Header controls */}
-            <div className="bg-slate-900 text-white p-4 flex justify-between items-center border-b border-slate-800 print:hidden">
+            <div className="bg-slate-900 text-white p-4 flex justify-between items-center border-b border-slate-800 print:hidden shrink-0">
               <div className="flex items-center space-x-1.5">
                 <FileText className="w-4 h-4 text-blue-400" />
                 <h4 className="text-xs font-bold uppercase tracking-wider">Preview Invoice & Kwitansi Resmi</h4>
@@ -787,7 +1807,7 @@ export default function PaymentsTab({
             </div>
 
             {/* Printable Area */}
-            <div className="p-8 space-y-6 text-slate-800 bg-white" id="printable-invoice">
+            <div className="p-4 sm:p-8 space-y-6 text-slate-800 bg-white overflow-y-auto flex-1 print:overflow-visible print:p-0" id="printable-invoice">
               {/* Invoice Logo and Title */}
               <div className="flex justify-between items-start border-b border-slate-200 pb-5">
                 <div className="space-y-1">
@@ -830,46 +1850,133 @@ export default function PaymentsTab({
                   <thead>
                     <tr className="bg-slate-100 font-extrabold text-slate-700 uppercase tracking-wider text-[10px] border-b border-slate-200">
                       <th className="p-3">Deskripsi Layanan</th>
-                      <th className="p-3 text-center">Durasi</th>
+                      <th className="p-3 text-center">Durasi / Qty</th>
                       <th className="p-3 text-right">Harga Unit</th>
                       <th className="p-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {/* Main Rent Row */}
                     <tr>
                       <td className="p-3">
-                        <p className="font-bold text-slate-900">Sewa Kamar Kos ({invoicePayment.roomNumber})</p>
+                        <p className="font-bold text-slate-900">{invoicePayment.description || `Sewa Kamar Kos (${invoicePayment.roomNumber})`}</p>
                         <p className="text-[10px] text-slate-400">Hunian kamar sewa cabang {invoicePayment.kosName} untuk Periode {invoicePayment.month} {invoicePayment.year}</p>
                       </td>
                       <td className="p-3 text-center">1 Bulan</td>
                       <td className="p-3 text-right font-mono">{formatIDR(invoicePayment.amount)}</td>
                       <td className="p-3 text-right font-mono font-bold text-slate-900">{formatIDR(invoicePayment.amount)}</td>
                     </tr>
+
+                    {/* Extra Charge Row */}
+                    {invoicePayment.extraChargeAmount && invoicePayment.extraChargeAmount > 0 ? (
+                      <tr>
+                        <td className="p-3">
+                          <p className="font-bold text-slate-900">{invoicePayment.extraChargeName || 'Biaya Tambahan'}</p>
+                          <p className="text-[10px] text-slate-400">Biaya tambahan atau penyesuaian khusus tagihan sewa</p>
+                        </td>
+                        <td className="p-3 text-center">1 Unit</td>
+                        <td className="p-3 text-right font-mono">{formatIDR(invoicePayment.extraChargeAmount)}</td>
+                        <td className="p-3 text-right font-mono font-bold text-slate-900">{formatIDR(invoicePayment.extraChargeAmount)}</td>
+                      </tr>
+                    ) : null}
+
+                    {/* Discount Row */}
+                    {invoicePayment.discountAmount && invoicePayment.discountAmount > 0 ? (
+                      <tr>
+                        <td className="p-3">
+                          <p className="font-bold text-rose-600">Potongan Harga / Diskon</p>
+                          <p className="text-[10px] text-slate-400">Diskon khusus pembayaran periode ini</p>
+                        </td>
+                        <td className="p-3 text-center">1 Unit</td>
+                        <td className="p-3 text-right font-mono text-rose-600">-{formatIDR(invoicePayment.discountAmount)}</td>
+                        <td className="p-3 text-right font-mono font-bold text-rose-600">-{formatIDR(invoicePayment.discountAmount)}</td>
+                      </tr>
+                    ) : null}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 border-t border-slate-200">
                       <td colSpan={2} className="p-3"></td>
                       <td className="p-3 text-right font-extrabold text-slate-500 uppercase text-[10px]">TOTAL TAGIHAN:</td>
-                      <td className="p-3 text-right font-mono font-black text-sm text-blue-600">{formatIDR(invoicePayment.amount)}</td>
+                      <td className="p-3 text-right font-mono font-black text-sm text-blue-600">
+                        {formatIDR(
+                          invoicePayment.amount + 
+                          (invoicePayment.extraChargeAmount || 0) - 
+                          (invoicePayment.discountAmount || 0)
+                        )}
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
-              {/* Payment Status Label */}
-              <div className="flex justify-between items-center bg-slate-50 border border-slate-200/60 p-4 rounded-lg">
-                <div className="space-y-0.5 text-xs">
-                  <p className="font-bold text-slate-500">Metode Pembayaran:</p>
-                  <p className="font-medium text-slate-400">Transfer Bank Mandiri / BCA resmi Hananny Kos</p>
-                </div>
-                <div className="text-right">
-                  <span className={`inline-block px-4 py-1.5 rounded-full font-black text-xs uppercase tracking-widest border shadow-xs ${
-                    invoicePayment.status === 'paid'
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
-                  }`}>
-                    {invoicePayment.status === 'paid' ? 'LUNAS / PAID' : 'BELUM BAYAR / UNPAID'}
-                  </span>
+              {/* Payment Status Label & Notes */}
+              <div className="space-y-4">
+                {invoicePayment.customNotes && (
+                  <div className="p-3.5 bg-amber-50/50 border border-amber-100 rounded-lg text-xs">
+                    <p className="font-extrabold text-amber-800 uppercase tracking-widest text-[9px] mb-1.5">Catatan Khusus Invoice:</p>
+                    <p className="text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">{invoicePayment.customNotes}</p>
+                  </div>
+                )}
+
+                {/* Proof of Transfer and Payment Date inside Preview */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  {/* Payment Details */}
+                  <div className="bg-slate-50 border border-slate-200/60 p-3.5 rounded-lg space-y-1.5">
+                    <p className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Detail Status:</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      <span className="text-slate-400 font-semibold">Status:</span>
+                      <span className="col-span-2 font-black uppercase tracking-wider text-xs">
+                        {invoicePayment.status === 'paid' || invoicePayment.paidAt ? (
+                          <span className="text-emerald-700">LUNAS / PAID</span>
+                        ) : (
+                          <span className="text-amber-700">BELUM BAYAR / UNPAID</span>
+                        )}
+                      </span>
+                      
+                      <span className="text-slate-400 font-semibold">Tgl Bayar:</span>
+                      <span className="col-span-2 font-mono font-bold text-slate-800">
+                        {invoicePayment.paidAt ? (
+                          new Date(invoicePayment.paidAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+                        ) : (
+                          '-'
+                        )}
+                      </span>
+
+                      <span className="text-slate-400 font-semibold">Opsi Bayar:</span>
+                      <span className="col-span-2 font-bold text-slate-800 uppercase">{invoicePayment.paymentOption || 'Bulanan'}</span>
+
+                      <span className="text-slate-400 font-semibold">Metode Bayar:</span>
+                      <span className="col-span-2 font-bold text-blue-800 uppercase">{invoicePayment.paymentMethod || 'Transfer Bank'}</span>
+                    </div>
+                  </div>
+
+                  {/* Proof of Transfer Image */}
+                  <div className="bg-slate-50 border border-slate-200/60 p-3.5 rounded-lg flex flex-col justify-between">
+                    <p className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Bukti Pembayaran / Transfer:</p>
+                    {invoicePayment.proofOfTransferUrl ? (
+                      <div className="flex items-center space-x-2 mt-1 bg-white p-1.5 border border-slate-100 rounded">
+                        <img 
+                          src={invoicePayment.proofOfTransferUrl} 
+                          alt="Bukti Transfer" 
+                          className="w-12 h-12 object-cover rounded border" 
+                          referrerPolicy="no-referrer" 
+                        />
+                        <div className="text-[10px]">
+                          <p className="font-bold text-slate-700">Terlampir</p>
+                          <a 
+                            href={invoicePayment.proofOfTransferUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-blue-600 hover:underline font-semibold print:hidden"
+                          >
+                            Buka Gambar ↗
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic font-medium mt-2">Belum ada bukti transfer terunggah.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -896,6 +2003,73 @@ export default function PaymentsTab({
               {/* Footer Note */}
               <div className="text-center border-t border-slate-200 pt-5 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                 Terima kasih atas kepercayaan Anda telah memilih Hananny Kos!
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {paymentToDelete && (
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white w-full max-w-sm rounded-lg border border-slate-200 shadow-xl overflow-hidden"
+          >
+            <div className="bg-rose-900 text-white p-4 flex justify-between items-center border-b border-rose-800">
+              <span className="text-[10px] text-rose-300 font-extrabold uppercase tracking-wider flex items-center">
+                <AlertTriangle className="w-4 h-4 mr-1.5 text-rose-300 animate-pulse" />
+                Konfirmasi Hapus Tagihan
+              </span>
+              <button onClick={() => setPaymentToDelete(null)} className="text-rose-200 hover:text-white text-xs font-bold uppercase tracking-wider">
+                Batal
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <p className="font-semibold text-slate-600 leading-relaxed text-center">
+                Apakah Anda yakin ingin menghapus data tagihan bulanan untuk:
+              </p>
+              <div className="p-3 bg-rose-50 border border-rose-100 rounded text-center">
+                <p className="font-black text-slate-800 text-sm uppercase">{paymentToDelete.tenantName}</p>
+                <p className="font-mono text-slate-500 font-bold mt-1">Periode: {paymentToDelete.month} {paymentToDelete.year}</p>
+                <p className="font-mono text-rose-600 font-bold mt-0.5">Jumlah: {formatIDR(paymentToDelete.amount)}</p>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium leading-normal text-center">
+                Tindakan ini permanen dan akan menghapus data tagihan ini secara langsung dari database Firestore.
+              </p>
+
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentToDelete(null)}
+                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-center"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (onDeletePayment) {
+                      try {
+                        await onDeletePayment(paymentToDelete.id);
+                        if (genPayment?.id === paymentToDelete.id) {
+                          setGenPayment(null);
+                        }
+                        if (invoicePayment?.id === paymentToDelete.id) {
+                          setInvoicePayment(null);
+                        }
+                        setPaymentToDelete(null);
+                      } catch (err) {
+                        alert('Gagal menghapus tagihan.');
+                      }
+                    }
+                  }}
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-center"
+                >
+                  Ya, Hapus Tagihan
+                </button>
               </div>
             </div>
           </motion.div>

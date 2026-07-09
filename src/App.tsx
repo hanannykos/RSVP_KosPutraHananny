@@ -131,7 +131,7 @@ export default function App() {
       const unsubKos = onSnapshot(collection(db, 'kos'), (snap) => {
         const list: Kos[] = [];
         snap.forEach(d => list.push(d.data() as Kos));
-        setKosList(list.length > 0 ? list : DEFAULT_KOS);
+        setKosList(list);
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, 'kos');
       });
@@ -678,6 +678,16 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
     }
   };
 
+  // HANDLER: Delete Payment
+  const handleDeletePayment = async (paymentId: string) => {
+    try {
+      await deleteDoc(doc(db, 'payments', paymentId));
+    } catch (err) {
+      console.error('Failed to delete payment:', err);
+      throw err;
+    }
+  };
+
   // HANDLER: Send Simulated WhatsApp payment reminder
   const handleSendWhatsAppReminder = async (pay: Payment, customMsg?: string) => {
     try {
@@ -729,6 +739,16 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
       await updateDoc(doc(db, 'complaints', compId), { status });
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // HANDLER: Delete Complaint
+  const handleDeleteComplaint = async (compId: string) => {
+    try {
+      await deleteDoc(doc(db, 'complaints', compId));
+    } catch (e) {
+      console.error('Failed to delete complaint:', e);
+      throw e;
     }
   };
 
@@ -903,6 +923,38 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
     { id: 'complaints', name: 'Laporan Keluhan', icon: Wrench },
     { id: 'cloud-sync', name: 'Multi-Device API', icon: Cloud },
     { id: 'setup', name: 'Setup & WA Template', icon: Settings },
+  ];
+
+  const navGroups = [
+    {
+      groupName: 'Bookings',
+      items: [
+        { id: 'reservations', name: 'Reservasi Penyewa', icon: CalendarCheck }
+      ]
+    },
+    {
+      groupName: 'Database',
+      items: [
+        { id: 'rooms', name: 'Daftar Kamar', icon: Building2 },
+        { id: 'tenants', name: 'Data Penghuni', icon: Users }
+      ]
+    },
+    {
+      groupName: 'Report',
+      items: [
+        { id: 'calendar', name: 'Kalender Penagihan', icon: Calendar },
+        { id: 'payments', name: 'Keuangan & Tagihan', icon: CreditCard },
+        { id: 'financials', name: 'Laporan Keuangan', icon: Wallet }
+      ]
+    },
+    {
+      groupName: 'Setup',
+      items: [
+        { id: 'complaints', name: 'Laporan Keluhan', icon: Wrench },
+        { id: 'setup', name: 'Setup & WA Template', icon: Settings },
+        { id: 'cloud-sync', name: 'Multi-Device API', icon: Cloud }
+      ]
+    }
   ];
 
   const renderPinModal = () => {
@@ -1121,28 +1173,57 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
         </div>
 
         {/* Dynamic Navigation Items */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-3">
           {!sidebarCollapsed && (
-            <div className="px-2 py-1.5 text-[10px] text-slate-500 font-bold uppercase tracking-wider font-extrabold transition-opacity duration-300">ADMIN MENU</div>
+            <div className="px-2 py-1 text-[10px] text-slate-500 font-extrabold uppercase tracking-widest transition-opacity duration-300">ADMIN MENU</div>
           )}
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                title={sidebarCollapsed ? item.name : undefined}
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'space-x-3 px-3 py-2'} rounded text-[11px] font-bold uppercase tracking-wider transition-all ${
-                  activeTab === item.id 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span className="truncate transition-opacity duration-300">{item.name}</span>}
-              </button>
-            );
-          })}
+          
+          {/* Overview Tab (always standalone at top of admin menu) */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setActiveTab('overview')}
+              title={sidebarCollapsed ? 'Overview' : undefined}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'space-x-3 px-3 py-2'} rounded text-[11px] font-bold uppercase tracking-wider transition-all ${
+                activeTab === 'overview' 
+                  ? 'bg-blue-600 text-white shadow-sm font-extrabold' 
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0" />
+              {!sidebarCollapsed && <span className="truncate transition-opacity duration-300">Overview</span>}
+            </button>
+          </div>
+
+          {/* Grouped Admin Menus */}
+          {navGroups.map((group) => (
+            <div key={group.groupName} className="space-y-1">
+              {!sidebarCollapsed ? (
+                <div className="px-3 pt-2 pb-1 text-[9px] text-slate-500 font-extrabold uppercase tracking-widest transition-opacity duration-300">
+                  {group.groupName}
+                </div>
+              ) : (
+                <div className="border-t border-slate-800 my-1 mx-2"></div>
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    title={sidebarCollapsed ? item.name : undefined}
+                    className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'space-x-3 px-3 py-2'} rounded text-[11px] font-bold uppercase tracking-wider transition-all ${
+                      activeTab === item.id 
+                        ? 'bg-blue-600 text-white shadow-sm font-extrabold' 
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {!sidebarCollapsed && <span className="truncate transition-opacity duration-300">{item.name}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Workspace info, real-time clock & exit button */}
@@ -1201,25 +1282,49 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
 
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-slate-900 text-white border-t border-slate-800 p-4 space-y-1 shrink-0 z-50 absolute top-14 left-0 right-0 shadow-lg">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded text-xs font-semibold ${
-                  activeTab === item.id ? 'bg-blue-600 text-white' : 'text-slate-400'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{item.name}</span>
-              </button>
-            );
-          })}
+        <div className="md:hidden bg-slate-900 text-white border-t border-slate-800 p-4 space-y-4 shrink-0 z-50 absolute top-14 left-0 right-0 shadow-lg max-h-[80vh] overflow-y-auto">
+          {/* Overview Standalone */}
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                setActiveTab('overview');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-3 py-2 rounded text-xs font-bold uppercase tracking-wider ${
+                activeTab === 'overview' ? 'bg-blue-600 text-white font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Overview</span>
+            </button>
+          </div>
+
+          {/* Grouped sections */}
+          {navGroups.map((group) => (
+            <div key={group.groupName} className="space-y-1 border-t border-slate-800 pt-3 first:border-t-0 first:pt-0">
+              <div className="px-3 pb-1 text-[10px] text-slate-500 font-extrabold uppercase tracking-widest">
+                {group.groupName}
+              </div>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded text-xs font-bold uppercase tracking-wider ${
+                      activeTab === item.id ? 'bg-blue-600 text-white font-extrabold' : 'text-slate-400'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{item.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1257,117 +1362,131 @@ Terima kasih atas kepercayaan Kakak tinggal bersama kami! 😊`,
             </div>
           </div>
 
-          {/* Tab Renderers */}
-          {activeTab === 'overview' && (
-            <OverviewTab 
-              kosList={kosList} 
-              rooms={rooms} 
-              tenants={tenants} 
-              payments={payments}
-              doorLogs={doorLogs}
-              onNavigate={(tab) => setActiveTab(tab)}
-            />
-          )}
+          {/* Tab Renderers with Framer Motion Transition */}
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="w-full"
+          >
+            {activeTab === 'overview' && (
+              <OverviewTab 
+                kosList={kosList} 
+                rooms={rooms} 
+                tenants={tenants} 
+                payments={payments}
+                doorLogs={doorLogs}
+                onNavigate={(tab) => setActiveTab(tab)}
+              />
+            )}
 
-          {activeTab === 'rooms' && (
-            <RoomsTab 
-              kosList={kosList} 
-              rooms={rooms} 
-              tenants={tenants} 
-              onUpdateRoom={handleUpdateRoom}
-            />
-          )}
+            {activeTab === 'rooms' && (
+              <RoomsTab 
+                kosList={kosList} 
+                rooms={rooms} 
+                tenants={tenants} 
+                onUpdateRoom={handleUpdateRoom}
+                onUpdateTenant={handleUpdateTenant}
+              />
+            )}
 
-          {activeTab === 'tenants' && (
-            <TenantsTab 
-              kosList={kosList} 
-              rooms={rooms} 
-              tenants={tenants} 
-              onAddTenant={handleAddTenant}
-              onRemoveTenant={handleRemoveTenant}
-              onCheckoutTenant={handleCheckoutTenant}
-              onUpdateTenant={handleUpdateTenant}
-            />
-          )}
+            {activeTab === 'tenants' && (
+              <TenantsTab 
+                kosList={kosList} 
+                rooms={rooms} 
+                tenants={tenants} 
+                payments={payments} 
+                onAddTenant={handleAddTenant}
+                onRemoveTenant={handleRemoveTenant}
+                onCheckoutTenant={handleCheckoutTenant}
+                onUpdateTenant={handleUpdateTenant}
+              />
+            )}
 
-          {activeTab === 'reservations' && (
-            <ReservationsTab 
-              kosList={kosList} 
-              rooms={rooms} 
-              reservations={reservations} 
-              onAddReservation={handleAddReservation}
-              onApproveReservation={handleApproveReservation}
-              onRejectReservation={handleRejectReservation}
-              onDeleteReservation={handleDeleteReservation}
-              onMoveToTenants={handleMoveToTenants}
-            />
-          )}
+            {activeTab === 'reservations' && (
+              <ReservationsTab 
+                kosList={kosList} 
+                rooms={rooms} 
+                reservations={reservations} 
+                onAddReservation={handleAddReservation}
+                onApproveReservation={handleApproveReservation}
+                onRejectReservation={handleRejectReservation}
+                onDeleteReservation={handleDeleteReservation}
+                onMoveToTenants={handleMoveToTenants}
+              />
+            )}
 
-          {activeTab === 'payments' && (
-            <PaymentsTab 
-              payments={payments} 
-              onMarkPaid={handleMarkPaid} 
-              onSendWhatsAppReminder={handleSendWhatsAppReminder}
-              whatsappLogs={whatsappLogs}
-              onRefreshLogs={fetchWhatsappLogs}
-              whatsappTemplates={whatsappTemplates}
-              onUpdatePayment={handleUpdatePayment}
-            />
-          )}
+            {activeTab === 'payments' && (
+              <PaymentsTab 
+                payments={payments} 
+                tenants={tenants}
+                rooms={rooms}
+                onMarkPaid={handleMarkPaid} 
+                onSendWhatsAppReminder={handleSendWhatsAppReminder}
+                whatsappLogs={whatsappLogs}
+                onRefreshLogs={fetchWhatsappLogs}
+                whatsappTemplates={whatsappTemplates}
+                onUpdatePayment={handleUpdatePayment}
+                onDeletePayment={handleDeletePayment}
+              />
+            )}
 
-          {activeTab === 'financials' && (
-            <FinancialTab 
-              kosList={kosList}
-              payments={payments}
-              financials={financials}
-              onAddTransaction={handleAddTransaction}
-              onUpdateTransaction={handleUpdateTransaction}
-              onDeleteTransaction={handleDeleteTransaction}
-              onImportPaidPayments={handleImportPaidPayments}
-            />
-          )}
+            {activeTab === 'financials' && (
+              <FinancialTab 
+                kosList={kosList}
+                payments={payments}
+                financials={financials}
+                onAddTransaction={handleAddTransaction}
+                onUpdateTransaction={handleUpdateTransaction}
+                onDeleteTransaction={handleDeleteTransaction}
+                onImportPaidPayments={handleImportPaidPayments}
+              />
+            )}
 
-          {activeTab === 'calendar' && (
-            <CalendarTab 
-              payments={payments} 
-              onMarkPaid={handleMarkPaid} 
-              onSendWhatsAppReminder={handleSendWhatsAppReminder}
-            />
-          )}
+            {activeTab === 'calendar' && (
+              <CalendarTab 
+                payments={payments} 
+                onMarkPaid={handleMarkPaid} 
+                onSendWhatsAppReminder={handleSendWhatsAppReminder}
+              />
+            )}
 
-          {activeTab === 'complaints' && (
-            <ComplaintsTab 
-              kosList={kosList} 
-              rooms={rooms} 
-              complaints={complaints} 
-              onAddComplaint={handleAddComplaint}
-              onUpdateComplaintStatus={handleUpdateComplaintStatus}
-              whatsappTemplates={whatsappTemplates}
-              onSendWhatsAppNotification={handleSendWhatsAppComplaint}
-            />
-          )}
+            {activeTab === 'complaints' && (
+              <ComplaintsTab 
+                kosList={kosList} 
+                rooms={rooms} 
+                complaints={complaints} 
+                onAddComplaint={handleAddComplaint}
+                onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                onDeleteComplaint={handleDeleteComplaint}
+                whatsappTemplates={whatsappTemplates}
+                onSendWhatsAppNotification={handleSendWhatsAppComplaint}
+              />
+            )}
 
-          {activeTab === 'setup' && (
-            <SetupTab 
-              kosList={kosList}
-              rooms={rooms}
-              whatsappTemplates={whatsappTemplates}
-              onSaveWhatsAppTemplates={handleSaveWhatsAppTemplates}
-              onSaveKosConfig={handleSaveKosConfig}
-              whatsappGateway={whatsappGateway}
-              onSaveWhatsAppGateway={handleSaveWhatsAppGateway}
-              onAddKos={handleAddKos}
-              onDeleteKos={handleDeleteKos}
-              adminLogins={adminLogins}
-              onSaveAdminLogin={handleSaveAdminLogin}
-              onDeleteAdminLogin={handleDeleteAdminLogin}
-              onDeleteDummyData={handleDeleteDummyData}
-            />
-          )}
+            {activeTab === 'setup' && (
+              <SetupTab 
+                kosList={kosList}
+                rooms={rooms}
+                whatsappTemplates={whatsappTemplates}
+                onSaveWhatsAppTemplates={handleSaveWhatsAppTemplates}
+                onSaveKosConfig={handleSaveKosConfig}
+                whatsappGateway={whatsappGateway}
+                onSaveWhatsAppGateway={handleSaveWhatsAppGateway}
+                onAddKos={handleAddKos}
+                onDeleteKos={handleDeleteKos}
+                adminLogins={adminLogins}
+                onSaveAdminLogin={handleSaveAdminLogin}
+                onDeleteAdminLogin={handleDeleteAdminLogin}
+                onDeleteDummyData={handleDeleteDummyData}
+              />
+            )}
 
-          {activeTab === 'cloud-sync' && (
-            <CloudSyncTab />
-          )}
+            {activeTab === 'cloud-sync' && (
+              <CloudSyncTab />
+            )}
+          </motion.div>
 
         </div>
       </main>

@@ -14,7 +14,7 @@ import {
   Smartphone,
   CheckCircle
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import { Kos, Room, Tenant, Payment, DoorLockLog } from '../types';
 
 interface OverviewTabProps {
@@ -227,40 +227,10 @@ export default function OverviewTab({
             </button>
           </div>
  
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={revenueTrendData}
-                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorDebt" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <YAxis 
-                  stroke="#94a3b8" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false}
-                  tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`}
-                />
-                <Tooltip 
-                  formatter={(value: any) => [formatIDR(value), '']}
-                  contentStyle={{ backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '11px' }}
-                />
-                <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Area type="monotone" dataKey="Pendapatan" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
-                <Area type="monotone" dataKey="Tunggakan" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorDebt)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="h-72 w-full flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+            <TrendingUp className="w-8 h-8 text-slate-300 mb-2" />
+            <p className="text-xs font-bold text-slate-600">Belum ada data tren pendapatan & tunggakan</p>
+            <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">Data grafik akan terakumulasi otomatis setelah transaksi sewa dicatat dan mulai berjalan dari awal</p>
           </div>
         </div>
  
@@ -311,28 +281,10 @@ export default function OverviewTab({
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto pr-1">
-            {doorLogs.slice(0, 5).map((log) => (
-              <div key={log.id} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 rounded px-2 transition-colors">
-                <div className="flex items-center space-x-3">
-                  <div className="p-1.5 bg-blue-50 text-blue-600 rounded">
-                    <Users className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-800 text-[11px]">{log.tenantName}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">{log.kosName} — {log.roomNumber}</p>
-                  </div>
-                </div>
-                <div className="text-right space-y-0.5">
-                  <span className="inline-block text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded">
-                    {log.action === 'unlock' ? 'Kunci Diserahkan' : 'Kunci Dikembalikan'}
-                  </span>
-                  <p className="text-[9px] text-slate-400 font-semibold">
-                    {new Date(log.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
-                  </p>
-                </div>
-              </div>
-            ))}
+          <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+            <Activity className="w-8 h-8 text-slate-300 mb-2 animate-pulse" />
+            <p className="text-xs font-bold text-slate-600">Belum ada aktivitas check-in terdata</p>
+            <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">Log serah terima kunci fisik & akses masuk kamar penyewa akan tercatat otomatis di sini</p>
           </div>
         </div>
 
@@ -361,7 +313,7 @@ export default function OverviewTab({
                     <p className="text-[9px] text-slate-400 font-medium">{kos.address.split(',')[0]}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-mono font-bold text-blue-600 text-xs">{kosAvail} / 10</p>
+                    <p className="font-mono font-bold text-blue-600 text-xs">{kosAvail} / {kosRooms.length}</p>
                     <p className="text-[9px] text-slate-400 font-semibold">Kosong</p>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
+import { jsPDF } from 'jspdf';
 import { 
   Wallet, 
   TrendingUp, 
@@ -188,6 +189,186 @@ export default function FinancialTab({
       alert('Gagal menyinkronkan pembayaran sewa!');
     } finally {
       setImporting(false);
+    }
+  };
+
+  // Export to PDF
+  const exportToPDF = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Title
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42); // slate-900
+      doc.text('LAPORAN TRANSAKSI KEUANGAN KOS', 15, 18);
+      
+      // Subtitle / Filters Info
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // slate-500
+      const dateText = `Periode: Tahun ${selectedYear === 'all' ? 'Semua' : selectedYear}${selectedMonth === 'all' ? '' : ', Bulan ' + selectedMonth}`;
+      const filterText = `Filter Tipe: ${filterType === 'all' ? 'Semua' : filterType === 'income' ? 'Pemasukan' : 'Pengeluaran'} | Kategori: ${filterCategory === 'all' ? 'Semua' : filterCategory}`;
+      doc.text(dateText, 15, 24);
+      doc.text(filterText, 15, 28);
+      
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(15, 32, 195, 32);
+      
+      // Table Header
+      doc.setFillColor(241, 245, 249); // slate-100
+      doc.rect(15, 36, 180, 8, 'F');
+      
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85); // slate-700
+      doc.text('TANGGAL', 17, 41);
+      doc.text('KOS', 40, 41);
+      doc.text('TIPE', 75, 41);
+      doc.text('KATEGORI', 95, 41);
+      doc.text('DESKRIPSI', 130, 41);
+      doc.text('JUMLAH (IDR)', 170, 41);
+      
+      doc.line(15, 44, 195, 44);
+      
+      // Table Content
+      doc.setFont('Helvetica', 'normal');
+      let y = 49;
+      const pageHeight = doc.internal.pageSize.height;
+      
+      let totalIncome = 0;
+      let totalExpense = 0;
+      
+      filteredTransactions.forEach((tx) => {
+        // Pagination check
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          // Redraw table headers on new page
+          doc.setFillColor(241, 245, 249);
+          doc.rect(15, 15, 180, 8, 'F');
+          doc.setFont('Helvetica', 'bold');
+          doc.setTextColor(51, 65, 85);
+          doc.text('TANGGAL', 17, 20);
+          doc.text('KOS', 40, 20);
+          doc.text('TIPE', 75, 20);
+          doc.text('KATEGORI', 95, 20);
+          doc.text('DESKRIPSI', 130, 20);
+          doc.text('JUMLAH (IDR)', 170, 20);
+          doc.line(15, 23, 195, 23);
+          doc.setFont('Helvetica', 'normal');
+          y = 28;
+        }
+        
+        const txDate = tx.date || '';
+        const txKos = tx.kosName || 'Umum';
+        const txType = tx.type === 'income' ? 'PEMASUKAN' : 'PENGELUARAN';
+        const txCategory = tx.category || '-';
+        const txDescription = tx.description || '-';
+        const txAmount = formatIDR(tx.amount);
+        
+        if (tx.type === 'income') {
+          totalIncome += tx.amount;
+        } else {
+          totalExpense += tx.amount;
+        }
+        
+        doc.setTextColor(71, 85, 105); // slate-600
+        doc.text(txDate, 17, y);
+        doc.text(txKos.substring(0, 18), 40, y);
+        
+        if (tx.type === 'income') {
+          doc.setTextColor(5, 150, 105); // green-600
+        } else {
+          doc.setTextColor(220, 38, 38); // red-600
+        }
+        doc.text(txType, 75, y);
+        
+        doc.setTextColor(71, 85, 105);
+        doc.text(txCategory.substring(0, 18), 95, y);
+        doc.text(txDescription.substring(0, 22), 130, y);
+        
+        doc.text(txAmount, 170, y);
+        
+        y += 7;
+      });
+      
+      // Draw totals
+      if (y > pageHeight - 30) {
+        doc.addPage();
+        y = 20;
+      }
+      
+      doc.setDrawColor(203, 213, 225); // slate-300
+      doc.line(15, y, 195, y);
+      y += 6;
+      
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85);
+      doc.text('RINGKASAN LAPORAN:', 17, y);
+      y += 6;
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(`Total Pemasukan: ${formatIDR(totalIncome)}`, 17, y);
+      y += 5;
+      doc.text(`Total Pengeluaran: ${formatIDR(totalExpense)}`, 17, y);
+      y += 5;
+      
+      const netProfit = totalIncome - totalExpense;
+      doc.setFont('Helvetica', 'bold');
+      if (netProfit >= 0) {
+        doc.setTextColor(5, 150, 105);
+      } else {
+        doc.setTextColor(220, 38, 38);
+      }
+      doc.text(`Saldo Bersih: ${formatIDR(netProfit)}`, 17, y);
+      
+      // Footer info
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text(`Dicetak secara otomatis via Cloud Kos System pada: ${new Date().toLocaleString('id-ID')}`, 17, pageHeight - 10);
+      
+      doc.save(`Laporan_Keuangan_Kos_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      alert('Gagal mengekspor PDF: ' + err);
+    }
+  };
+
+  // Export to Excel / CSV
+  const exportToExcel = () => {
+    try {
+      // CSV content with BOM for excel compatibility
+      let csvContent = "\uFEFF";
+      
+      // Headers
+      csvContent += "ID Transaksi,Tanggal,Nama Kos,Tipe,Kategori,Deskripsi,Jumlah (IDR)\n";
+      
+      filteredTransactions.forEach(tx => {
+        const txId = tx.id;
+        const txDate = tx.date;
+        const txKosName = `"${(tx.kosName || 'Umum').replace(/"/g, '""')}"`;
+        const txType = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+        const txCategory = `"${(tx.category || '').replace(/"/g, '""')}"`;
+        const txDesc = `"${(tx.description || '').replace(/"/g, '""')}"`;
+        const txAmount = tx.amount;
+        
+        csvContent += `${txId},${txDate},${txKosName},${txType},${txCategory},${txDesc},${txAmount}\n`;
+      });
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Laporan_Keuangan_Kos_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+      alert('Gagal mengekspor Excel: ' + err);
     }
   };
 
@@ -535,28 +716,48 @@ export default function FinancialTab({
               </div>
             </div>
 
-            {/* Quick Filter buttons */}
-            <div className="flex bg-slate-200/60 p-1 rounded-lg self-start md:self-auto shrink-0">
+            {/* Quick Filter & Export buttons */}
+            <div className="flex flex-wrap gap-2 items-center self-start md:self-auto shrink-0">
+              <div className="flex bg-slate-200/60 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setFilterType('all')}
+                  className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'all' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('income')}
+                  className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'income' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Pemasukan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('expense')}
+                  className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'expense' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Pengeluaran
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setFilterType('all')}
-                className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'all' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                onClick={exportToPDF}
+                className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-extrabold rounded-lg text-[10px] uppercase tracking-wider transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
               >
-                Semua
+                <FileText className="w-3.5 h-3.5" />
+                <span>Ekspor ke PDF</span>
               </button>
+
               <button
                 type="button"
-                onClick={() => setFilterType('income')}
-                className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'income' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                onClick={exportToExcel}
+                className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-extrabold rounded-lg text-[10px] uppercase tracking-wider transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
               >
-                Pemasukan
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterType('expense')}
-                className={`px-3 py-1 text-[10px] font-black uppercase rounded-md tracking-wider transition-all cursor-pointer ${filterType === 'expense' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                Pengeluaran
+                <Download className="w-3.5 h-3.5" />
+                <span>Ekspor ke Excel</span>
               </button>
             </div>
           </div>

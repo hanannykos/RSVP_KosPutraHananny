@@ -13,7 +13,12 @@ import {
   ChevronRight,
   Sparkles,
   MessageSquare,
-  Send
+  Send,
+  Trash2,
+  Eye,
+  AlertCircle,
+  HelpCircle,
+  X
 } from 'lucide-react';
 import { Kos, Room, Complaint } from '../types';
 
@@ -23,6 +28,7 @@ interface ComplaintsTabProps {
   complaints: Complaint[];
   onAddComplaint: (compData: Omit<Complaint, 'id' | 'createdAt'>) => Promise<void>;
   onUpdateComplaintStatus: (compId: string, status: 'pending' | 'in_progress' | 'resolved') => Promise<void>;
+  onDeleteComplaint?: (compId: string) => Promise<void>;
   whatsappTemplates?: {
     paymentReminder: string;
     complaintNotification: string;
@@ -53,6 +59,7 @@ export default function ComplaintsTab({
   complaints, 
   onAddComplaint,
   onUpdateComplaintStatus,
+  onDeleteComplaint,
   whatsappTemplates,
   onSendWhatsAppNotification
 }: ComplaintsTabProps) {
@@ -63,6 +70,55 @@ export default function ComplaintsTab({
   const [activeComplaint, setActiveComplaint] = useState<Complaint | null>(null);
   const [customMsg, setCustomMsg] = useState<string>('');
   const [sending, setSending] = useState<boolean>(false);
+
+  // Preview & Dialog states
+  const [previewComplaint, setPreviewComplaint] = useState<Complaint | null>(null);
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    type: 'confirm' | 'alert';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  } | null>(null);
+
+  const showCustomConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setDialogConfig({
+      isOpen: true,
+      type: 'confirm',
+      title,
+      message,
+      onConfirm
+    });
+  };
+
+  const showCustomAlert = (title: string, message: string) => {
+    setDialogConfig({
+      isOpen: true,
+      type: 'alert',
+      title,
+      message
+    });
+  };
+
+  const handleDeleteComplaintClick = (compId: string) => {
+    showCustomConfirm(
+      'Hapus Laporan Keluhan',
+      'Apakah Anda yakin ingin menghapus laporan keluhan ini secara permanen dari database?',
+      async () => {
+        if (onDeleteComplaint) {
+          try {
+            await onDeleteComplaint(compId);
+            showCustomAlert('Berhasil', 'Laporan keluhan berhasil dihapus!');
+          } catch (e) {
+            console.error(e);
+            showCustomAlert('Gagal', 'Gagal menghapus laporan keluhan.');
+          }
+        } else {
+          showCustomAlert('Fitur Tidak Tersedia', 'Aksi hapus tidak didukung saat ini.');
+        }
+      }
+    );
+  };
 
   const handleOpenWhatsAppComposer = (comp: Complaint) => {
     setActiveComplaint(comp);
@@ -285,12 +341,32 @@ export default function ComplaintsTab({
                           <CheckCircle className="w-3.5 h-3.5 mr-1" /> Selesai Diperbaiki
                         </span>
                       )}
+                      
                       <button
+                        type="button"
+                        onClick={() => setPreviewComplaint(comp)}
+                        className="p-1 border border-slate-200 text-slate-600 bg-slate-100/50 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                        title="Preview Detail Keluhan"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleOpenWhatsAppComposer(comp)}
-                        className="p-1 border border-blue-200 text-blue-600 bg-blue-50/50 hover:bg-blue-50 rounded transition-colors cursor-pointer ml-1"
+                        className="p-1 border border-blue-200 text-blue-600 bg-blue-50/50 hover:bg-blue-50 rounded transition-colors cursor-pointer"
                         title="Kirim Notifikasi WhatsApp"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteComplaintClick(comp.id)}
+                        className="p-1 border border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                        title="Hapus Laporan Keluhan"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -486,6 +562,209 @@ export default function ComplaintsTab({
                 <Send className="w-3.5 h-3.5" />
                 <span>{sending ? 'Mengirim...' : 'Kirim Notifikasi WhatsApp'}</span>
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Complaint Preview Modal */}
+      {previewComplaint && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white w-full max-w-lg rounded-lg border border-slate-200 shadow-xl overflow-hidden"
+          >
+            <div className="bg-slate-900 text-white p-4 flex justify-between items-center border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-blue-400" />
+                <h4 className="text-sm font-bold">Detail Laporan Keluhan</h4>
+              </div>
+              <button 
+                onClick={() => setPreviewComplaint(null)} 
+                className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Header Details */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Pelapor</p>
+                  <p className="text-xs font-bold text-slate-800">{previewComplaint.tenantName}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Lokasi Kos / Kamar</p>
+                  <p className="text-xs font-bold text-slate-800">{previewComplaint.kosName} — {previewComplaint.roomNumber}</p>
+                </div>
+                <div className="pt-2 border-t border-slate-200/60">
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Prioritas</p>
+                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border inline-block uppercase tracking-wider mt-0.5 ${getSeverityStyle(previewComplaint.severity)}`}>
+                    {previewComplaint.severity === 'high' ? 'Darurat (High)' : previewComplaint.severity === 'medium' ? 'Sedang (Medium)' : 'Rendah (Low)'}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-200/60">
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Status</p>
+                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded inline-block uppercase tracking-wider mt-0.5 ${
+                    previewComplaint.status === 'resolved' 
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                      : previewComplaint.status === 'in_progress' 
+                        ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                        : 'bg-rose-50 text-rose-700 border border-rose-100'
+                  }`}>
+                    {previewComplaint.status === 'resolved' ? 'Selesai' : previewComplaint.status === 'in_progress' ? 'Diproses' : 'Antrean'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Topic */}
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Topik Isu / Masalah</p>
+                <p className="text-xs font-extrabold text-slate-900 bg-blue-50/40 p-2.5 rounded border border-blue-100/50">
+                  {previewComplaint.issue}
+                </p>
+              </div>
+
+              {/* Deskripsi */}
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Detail / Deskripsi Kendala</p>
+                <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200 leading-relaxed font-bold whitespace-pre-wrap">
+                  {previewComplaint.details}
+                </div>
+              </div>
+
+              {/* Dokumentasi foto */}
+              {previewComplaint.documentationPhotos && previewComplaint.documentationPhotos.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Foto Dokumentasi Kendala ({previewComplaint.documentationPhotos.length})</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {previewComplaint.documentationPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative rounded overflow-hidden border border-slate-200">
+                        <img
+                          src={photo}
+                          alt={`Dokumentasi ${idx + 1}`}
+                          className="w-full h-32 object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center justify-between border-t border-slate-100 pt-3">
+                <span>ID Laporan: {previewComplaint.id}</span>
+                <span>Waktu Masuk: {new Date(previewComplaint.createdAt).toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleOpenWhatsAppComposer(previewComplaint);
+                  setPreviewComplaint(null);
+                }}
+                className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-blue-200 text-blue-600 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center space-x-1 cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Kirim WhatsApp</span>
+              </button>
+
+              <div className="flex items-center space-x-2">
+                {previewComplaint.status === 'pending' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onUpdateComplaintStatus(previewComplaint.id, 'in_progress');
+                      setPreviewComplaint(prev => prev ? { ...prev, status: 'in_progress' } : null);
+                    }}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Proses Keluhan
+                  </button>
+                )}
+                {previewComplaint.status === 'in_progress' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onUpdateComplaintStatus(previewComplaint.id, 'resolved');
+                      setPreviewComplaint(prev => prev ? { ...prev, status: 'resolved' } : null);
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Tandai Selesai
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewComplaint(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Elegant Custom Dialog Modal (Alert & Confirm) */}
+      {dialogConfig && dialogConfig.isOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-[100] p-4 animate-fade-in">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white w-full max-w-sm rounded-lg border border-slate-200 shadow-2xl overflow-hidden"
+          >
+            <div className="p-5 text-center space-y-4">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-50 border border-amber-100">
+                {dialogConfig.type === 'confirm' ? (
+                  <HelpCircle className="h-6 w-6 text-amber-600" />
+                ) : (
+                  <AlertCircle className="h-6 w-6 text-blue-600" />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <h4 className="text-sm font-bold text-slate-900">{dialogConfig.title}</h4>
+                <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                  {dialogConfig.message}
+                </p>
+              </div>
+            </div>
+            <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 flex gap-2 justify-end">
+              {dialogConfig.type === 'confirm' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setDialogConfig(null)}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (dialogConfig.onConfirm) dialogConfig.onConfirm();
+                      setDialogConfig(null);
+                    }}
+                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                  >
+                    Hapus
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setDialogConfig(null)}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  OK
+                </button>
+              )}
             </div>
           </motion.div>
         </div>

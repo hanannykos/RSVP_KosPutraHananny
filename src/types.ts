@@ -120,6 +120,7 @@ export interface Payment {
   proofOfTransferUploadedAt?: string;
   paymentOption?: string;
   billingDate?: string;
+  paymentMethod?: string;
 }
 
 export interface Complaint {
